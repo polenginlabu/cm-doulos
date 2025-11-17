@@ -1,0 +1,123 @@
+<?php
+
+namespace App\Filament\Resources\UserResource\RelationManagers;
+
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+
+class DisciplesRelationManager extends RelationManager
+{
+    protected static string $relationship = 'mentorships';
+
+    protected static ?string $title = 'Disciples';
+
+    protected static ?string $modelLabel = 'Disciple';
+
+    public function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Select::make('disciple_id')
+                    ->label('Disciple')
+                    ->relationship(
+                        'disciple',
+                        'name',
+                        fn (Builder $query) => $query->whereDoesntHave('discipleships', function ($q) {
+                            $q->where('status', 'active');
+                        })
+                    )
+                    ->searchable()
+                    ->preload()
+                    ->required()
+                    ->helperText('Select a member to become a disciple. Only members not already in a discipleship will be shown.')
+                    ->rules([
+                        function () {
+                            return function (string $attribute, $value, \Closure $fail) {
+                                if ($this->ownerRecord->id === $value) {
+                                    $fail('A user cannot be their own disciple.');
+                                }
+                            };
+                        },
+                    ]),
+                Forms\Components\DatePicker::make('started_at')
+                    ->label('Started At')
+                    ->default(now())
+                    ->required(),
+                Forms\Components\Select::make('status')
+                    ->options([
+                        'active' => 'Active',
+                        'inactive' => 'Inactive',
+                        'completed' => 'Completed',
+                    ])
+                    ->default('active')
+                    ->required(),
+                Forms\Components\Textarea::make('notes')
+                    ->rows(3),
+            ]);
+    }
+
+    public function table(Table $table): Table
+    {
+        return $table
+            ->recordTitleAttribute('disciple.name')
+            ->columns([
+                Tables\Columns\TextColumn::make('disciple.name')
+                    ->label('Disciple Name')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('disciple.email')
+                    ->label('Email')
+                    ->searchable()
+                    ->placeholder('No email'),
+                Tables\Columns\TextColumn::make('disciple.attendance_status')
+                    ->label('Attendance Status')
+                    ->badge()
+                    ->colors([
+                        'warning' => '1st',
+                        'info' => '2nd',
+                        'success' => '3rd',
+                        'primary' => '4th',
+                        'gray' => 'regular',
+                    ]),
+                Tables\Columns\TextColumn::make('started_at')
+                    ->date()
+                    ->sortable(),
+                Tables\Columns\BadgeColumn::make('status')
+                    ->colors([
+                        'success' => 'active',
+                        'warning' => 'inactive',
+                        'gray' => 'completed',
+                    ]),
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'active' => 'Active',
+                        'inactive' => 'Inactive',
+                        'completed' => 'Completed',
+                    ]),
+            ])
+            ->headerActions([
+                Tables\Actions\CreateAction::make()
+                    ->mutateFormDataUsing(function (array $data): array {
+                        $data['mentor_id'] = $this->ownerRecord->id;
+                        return $data;
+                    }),
+            ])
+            ->actions([
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+}
+
