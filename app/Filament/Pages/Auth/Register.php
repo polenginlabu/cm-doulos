@@ -54,9 +54,9 @@ class Register extends BaseRegister
     protected function getMentorFormComponent(): Component
     {
         return Select::make('mentor_id')
-            ->label('Mentor')
+            ->label('Cell Leader')
             ->options(function ($get) {
-                $query = User::where('is_active', true);
+                $query = User::all();
 
                 // Filter by selected gender (from registration form)
                 $gender = $get('gender');
