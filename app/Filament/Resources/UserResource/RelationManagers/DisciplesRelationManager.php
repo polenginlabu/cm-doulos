@@ -27,14 +27,22 @@ class DisciplesRelationManager extends RelationManager
                     ->relationship(
                         'disciple',
                         'name',
-                        fn (Builder $query) => $query->whereDoesntHave('discipleships', function ($q) {
-                            $q->where('status', 'active');
-                        })
+                        function (Builder $query) {
+                            // Filter by owner's (mentor's) gender
+                            if ($this->ownerRecord && $this->ownerRecord->gender) {
+                                $query->where('gender', $this->ownerRecord->gender);
+                            }
+                            
+                            // Only show users not already in an active discipleship
+                            return $query->whereDoesntHave('discipleships', function ($q) {
+                                $q->where('status', 'active');
+                            });
+                        }
                     )
                     ->searchable()
                     ->preload()
                     ->required()
-                    ->helperText('Select a member to become a disciple. Only members not already in a discipleship will be shown.')
+                    ->helperText('Select a member to become a disciple. Only members with the same gender as you and not already in a discipleship will be shown.')
                     ->rules([
                         function () {
                             return function (string $attribute, $value, \Closure $fail) {

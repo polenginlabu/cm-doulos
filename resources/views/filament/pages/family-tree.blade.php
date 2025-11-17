@@ -5,19 +5,19 @@
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Members</div>
                 <div class="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                    {{ $this->getNetworkStats()['total_members'] ?? 0 }}
+                    {{ $this->networkStats['total_members'] ?? 0 }}
                 </div>
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div class="text-sm font-medium text-gray-500 dark:text-gray-400">Direct Disciples</div>
                 <div class="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                    {{ $this->getNetworkStats()['direct_disciples'] ?? 0 }}
+                    {{ $this->networkStats['direct_disciples'] ?? 0 }}
                 </div>
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div class="text-sm font-medium text-gray-500 dark:text-gray-400">Network Levels</div>
                 <div class="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                    {{ $this->getNetworkStats()['total_levels'] ?? 0 }}
+                    {{ $this->networkStats['total_levels'] ?? 0 }}
                 </div>
             </div>
         </div>

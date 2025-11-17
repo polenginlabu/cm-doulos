@@ -49,7 +49,7 @@ class DiscipleshipResource extends Resource
                 Forms\Components\Section::make('Discipleship Relationship')
                     ->schema([
                         Forms\Components\Select::make('mentor_id')
-                            ->label('Mentor')
+                            ->label('Cell Leader')
                             ->relationship(
                                 'mentor',
                                 'name',
@@ -57,6 +57,12 @@ class DiscipleshipResource extends Resource
                                     if (Auth::check()) {
                                         /** @var \App\Models\User $user */
                                         $user = Auth::user();
+
+                                        // Filter by logged-in user's gender
+                                        if ($user && $user->gender) {
+                                            $query->where('gender', $user->gender);
+                                        }
+
                                         if ($user && method_exists($user, 'getNetworkUserIds')) {
                                             $query->whereIn('id', $user->getNetworkUserIds());
                                         }
@@ -67,7 +73,7 @@ class DiscipleshipResource extends Resource
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->helperText('The person who is mentoring'),
+                            ->helperText('The cell leader who is mentoring this disciple. Only users with the same gender as you are shown.'),
                         Forms\Components\Select::make('disciple_id')
                             ->label('Disciple')
                             ->relationship(
@@ -87,12 +93,34 @@ class DiscipleshipResource extends Resource
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->helperText('The person being mentored')
+                            ->helperText('The person being mentored. A disciple can only have one active cell leader.')
                             ->rules([
                                 function ($get) {
                                     return function (string $attribute, $value, \Closure $fail) use ($get) {
                                         if ($get('mentor_id') === $value) {
                                             $fail('A user cannot be their own disciple.');
+                                        }
+                                    };
+                                },
+                                function ($get, $record) {
+                                    return function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                        // Only check if status is active
+                                        $status = $get('status') ?? 'active';
+                                        if ($status === 'active' && $value) {
+                                            // Check if this disciple already has an active mentor
+                                            $existingActive = Discipleship::where('disciple_id', $value)
+                                                ->where('status', 'active')
+                                                ->when($record, function ($query) use ($record) {
+                                                    // Exclude current record when editing
+                                                    return $query->where('id', '!=', $record->id);
+                                                })
+                                                ->exists();
+
+                                            if ($existingActive) {
+                                                $disciple = \App\Models\User::find($value);
+                                                $discipleName = $disciple ? $disciple->name : 'This user';
+                                                $fail("{$discipleName} already has an active cell leader. Please deactivate the existing relationship first.");
+                                            }
                                         }
                                     };
                                 },
@@ -122,7 +150,7 @@ class DiscipleshipResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('mentor.name')
-                    ->label('Mentor')
+                    ->label('Cell Leader')
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('disciple.name')
@@ -154,7 +182,7 @@ class DiscipleshipResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('mentor_id')
-                    ->label('Mentor')
+                    ->label('Cell Leader')
                     ->relationship('mentor', 'name')
                     ->searchable(),
                 Tables\Filters\SelectFilter::make('disciple_id')

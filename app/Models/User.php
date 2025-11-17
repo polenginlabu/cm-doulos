@@ -30,6 +30,11 @@ class User extends Authenticatable
         'last_attendance_date',
         'total_attendances',
         'cell_group_id',
+        'network_leader_id',
+        'primary_user_id',
+        'gender',
+        'is_primary_leader',
+        'is_super_admin',
         'notes',
         'invitation_token',
         'invited_at',
@@ -62,6 +67,8 @@ class User extends Authenticatable
             'last_attendance_date' => 'date',
             'invited_at' => 'datetime',
             'is_active' => 'boolean',
+            'is_primary_leader' => 'boolean',
+            'is_super_admin' => 'boolean',
         ];
     }
 
@@ -142,6 +149,30 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the network leader of this user.
+     */
+    public function networkLeader()
+    {
+        return $this->belongsTo(User::class, 'network_leader_id');
+    }
+
+    /**
+     * Get the primary user of this user.
+     */
+    public function primaryUser()
+    {
+        return $this->belongsTo(User::class, 'primary_user_id');
+    }
+
+    /**
+     * Get all users who have this user as their network leader.
+     */
+    public function networkLeaderMembers()
+    {
+        return $this->hasMany(User::class, 'network_leader_id');
+    }
+
+    /**
      * Get all users in this user's network (all disciples and their disciples recursively).
      *
      * @return \Illuminate\Database\Eloquent\Builder
@@ -154,26 +185,43 @@ class User extends Authenticatable
 
     /**
      * Get all user IDs in this user's network recursively.
+     * Optimized to avoid N+1 queries by loading all discipleships at once.
      *
      * @return array<int>
      */
     public function getNetworkUserIds(): array
     {
-        $ids = [$this->id];
-
-        // Get direct disciples
-        $directDisciples = Discipleship::where('mentor_id', $this->id)
-            ->where('status', 'active')
-            ->pluck('disciple_id')
+        // Load all active discipleships in one query
+        $allDiscipleships = Discipleship::where('status', 'active')
+            ->select('mentor_id', 'disciple_id')
+            ->get()
+            ->groupBy('mentor_id')
+            ->map(function ($group) {
+                return $group->pluck('disciple_id')->toArray();
+            })
             ->toArray();
 
-        $ids = array_merge($ids, $directDisciples);
+        $ids = [$this->id];
+        $queue = [$this->id];
+        $processed = [];
 
-        // Recursively get disciples of disciples
-        foreach ($directDisciples as $discipleId) {
-            $disciple = User::find($discipleId);
-            if ($disciple) {
-                $ids = array_merge($ids, $disciple->getNetworkUserIds());
+        // Breadth-first traversal to collect all disciple IDs
+        while (!empty($queue)) {
+            $currentId = array_shift($queue);
+
+            if (isset($processed[$currentId])) {
+                continue;
+            }
+            $processed[$currentId] = true;
+
+            // Get all disciples of current user
+            if (isset($allDiscipleships[$currentId])) {
+                foreach ($allDiscipleships[$currentId] as $discipleId) {
+                    if (!isset($processed[$discipleId])) {
+                        $ids[] = $discipleId;
+                        $queue[] = $discipleId;
+                    }
+                }
             }
         }
 

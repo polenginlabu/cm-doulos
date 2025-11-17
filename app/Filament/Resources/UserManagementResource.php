@@ -2,8 +2,7 @@
 
 namespace App\Filament\Resources;
 
-use App\Filament\Resources\UserResource\Pages;
-use App\Filament\Resources\UserResource\RelationManagers;
+use App\Filament\Resources\UserManagementResource\Pages;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -11,23 +10,28 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 
-class UserResource extends Resource
+class UserManagementResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-users';
+    protected static ?string $navigationIcon = 'heroicon-o-user-circle';
 
-    protected static ?string $navigationLabel = 'Members';
+    protected static ?string $navigationLabel = 'User Management';
 
-    protected static ?string $modelLabel = 'Member';
+    protected static ?string $modelLabel = 'User';
 
-    protected static ?string $pluralModelLabel = 'Members';
+    protected static ?string $pluralModelLabel = 'Users';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
+
+    public static function canAccess(): bool
+    {
+        // Only allow access if user is super admin
+        return Auth::check() && Auth::user()->is_super_admin;
+    }
 
     public static function form(Form $form): Form
     {
@@ -52,7 +56,6 @@ class UserResource extends Resource
                             ->options([
                                 'male' => 'Male',
                                 'female' => 'Female',
-                                'other' => 'Other',
                             ])
                             ->nullable(),
                         Forms\Components\DatePicker::make('date_of_birth'),
@@ -71,8 +74,8 @@ class UserResource extends Resource
                                 $query = \App\Models\User::orderBy('name');
 
                                 // Filter by logged-in user's gender
-                                if (Auth::check() && Auth::user()->gender) {
-                                    $query->where('gender', Auth::user()->gender);
+                                if (\Illuminate\Support\Facades\Auth::check() && \Illuminate\Support\Facades\Auth::user()->gender) {
+                                    $query->where('gender', \Illuminate\Support\Facades\Auth::user()->gender);
                                 }
 
                                 return $query->pluck('name', 'id')->toArray();
@@ -82,8 +85,8 @@ class UserResource extends Resource
                                     ->orderBy('name');
 
                                 // Filter by logged-in user's gender
-                                if (Auth::check() && Auth::user()->gender) {
-                                    $query->where('gender', Auth::user()->gender);
+                                if (\Illuminate\Support\Facades\Auth::check() && \Illuminate\Support\Facades\Auth::user()->gender) {
+                                    $query->where('gender', \Illuminate\Support\Facades\Auth::user()->gender);
                                 }
 
                                 return $query->limit(50)->pluck('name', 'id')->toArray();
@@ -158,15 +161,6 @@ class UserResource extends Resource
                             ->helperText('Grant super admin privileges to this user'),
                     ])->columns(2),
 
-                Forms\Components\Section::make('Invitation')
-                    ->schema([
-                        Forms\Components\Placeholder::make('auto_assigned')
-                            ->label('Network Assignment')
-                            ->content('This member will automatically be added to your network as your disciple.')
-                            ->visible(fn (string $context): bool => $context === 'create' && Auth::check()),
-                    ])
-                    ->visible(fn (string $context): bool => $context === 'create'),
-
                 Forms\Components\Textarea::make('notes')
                     ->columnSpanFull()
                     ->rows(3),
@@ -175,23 +169,8 @@ class UserResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
-
-        // If user is logged in, only show their network (unless they're a super admin)
-        if (Auth::check()) {
-            /** @var User $user */
-            $user = Auth::user();
-            // Super admins can see all users
-            if ($user && $user->is_super_admin) {
-                return $query;
-            }
-            if ($user && method_exists($user, 'getNetworkUserIds')) {
-                $networkIds = $user->getNetworkUserIds();
-                $query->whereIn('id', $networkIds);
-            }
-        }
-
-        return $query;
+        // Super admins can see all users
+        return parent::getEloquentQuery();
     }
 
     public static function table(Table $table): Table
@@ -212,17 +191,6 @@ class UserResource extends Resource
                     ->label('Cell Group')
                     ->sortable()
                     ->placeholder('No cell group'),
-                Tables\Columns\BadgeColumn::make('attendance_status')
-                    ->colors([
-                        'warning' => '1st',
-                        'info' => '2nd',
-                        'success' => '3rd',
-                        'primary' => '4th',
-                        'gray' => 'regular',
-                    ]),
-                Tables\Columns\TextColumn::make('total_attendances')
-                    ->label('Total Attendances')
-                    ->sortable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Active')
                     ->boolean(),
@@ -238,7 +206,6 @@ class UserResource extends Resource
                     ->colors([
                         'primary' => 'male',
                         'success' => 'female',
-                        'warning' => 'other',
                     ]),
                 Tables\Columns\TextColumn::make('networkLeader.name')
                     ->label('Network Leader')
@@ -254,19 +221,19 @@ class UserResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('attendance_status')
+                Tables\Filters\SelectFilter::make('is_active')
+                    ->label('Active Status')
                     ->options([
-                        '1st' => '1st Time',
-                        '2nd' => '2nd Time',
-                        '3rd' => '3rd Time',
-                        '4th' => '4th Time',
-                        'regular' => 'Regular',
+                        1 => 'Active',
+                        0 => 'Inactive',
                     ]),
+                Tables\Filters\TernaryFilter::make('is_primary_leader')
+                    ->label('Primary Leader'),
+                Tables\Filters\TernaryFilter::make('is_super_admin')
+                    ->label('Super Admin'),
                 Tables\Filters\SelectFilter::make('cell_group_id')
                     ->label('Cell Group')
                     ->relationship('cellGroup', 'name'),
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Active Status'),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -280,21 +247,13 @@ class UserResource extends Resource
             ]);
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            RelationManagers\DisciplesRelationManager::class,
-            RelationManagers\AttendancesRelationManager::class,
-        ];
-    }
-
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListUsers::route('/'),
-            'create' => Pages\CreateUser::route('/create'),
-            'view' => Pages\ViewUser::route('/{record}'),
-            'edit' => Pages\EditUser::route('/{record}/edit'),
+            'index' => Pages\ListUserManagements::route('/'),
+            'create' => Pages\CreateUserManagement::route('/create'),
+            'view' => Pages\ViewUserManagement::route('/{record}'),
+            'edit' => Pages\EditUserManagement::route('/{record}/edit'),
         ];
     }
 }
