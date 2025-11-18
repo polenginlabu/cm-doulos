@@ -21,11 +21,11 @@ class UserResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?string $navigationLabel = 'Members';
+    protected static ?string $navigationLabel = 'My Disciples';
 
-    protected static ?string $modelLabel = 'Member';
+    protected static ?string $modelLabel = 'Disciple';
 
-    protected static ?string $pluralModelLabel = 'Members';
+    protected static ?string $pluralModelLabel = 'My Disciples';
 
     protected static ?int $navigationSort = 1;
 
@@ -67,7 +67,15 @@ class UserResource extends Resource
                             ->label('Cell Group')
                             ->relationship('cellGroup', 'name')
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, $set, $record) {
+                                // Auto-update category when cell group changes
+                                if ($record) {
+                                    $record->updateCategory();
+                                    $set('category', $record->category);
+                                }
+                            }),
                         Forms\Components\Select::make('cell_leader_id')
                             ->label('Cell Leader')
                             ->options(function ($record) {
@@ -76,16 +84,6 @@ class UserResource extends Resource
                                 // Filter by logged-in user's gender
                                 if (Auth::check() && Auth::user()->gender) {
                                     $query->where('gender', Auth::user()->gender);
-                                }
-
-                                // Exclude logged-in user
-                                if (Auth::check()) {
-                                    $query->where('id', '!=', Auth::id());
-                                }
-
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
                                 }
 
                                 return $query->get()->mapWithKeys(function ($user) {
@@ -104,11 +102,119 @@ class UserResource extends Resource
                                     $query->where('gender', Auth::user()->gender);
                                 }
 
+                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
+                                    return [$user->id => $user->name];
+                                })->toArray();
+                            })
+                            ->getOptionLabelUsing(fn ($value): ?string =>
+                                \App\Models\User::find($value)?->name
+                            )
+                            ->searchable()
+                            ->preload()
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, $set, $get, $livewire) {
+                                // Store cell_leader_id in Livewire property for use in afterSave
+                                if (property_exists($livewire, 'cellLeaderId')) {
+                                    $livewire->cellLeaderId = $state;
+                                }
+
+                                // If cell leader is selected, set network leader accordingly
+                                if ($state) {
+                                    $cellLeader = \App\Models\User::find($state);
+                                    if ($cellLeader) {
+                                        if ($cellLeader->is_primary_leader) {
+                                            // If cell leader is a primary leader, set as network leader
+                                            $set('primary_user_id', $state);
+                                        } elseif ($cellLeader->primary_user_id) {
+                                            // If cell leader has a network leader, inherit it
+                                            $set('primary_user_id', $cellLeader->primary_user_id);
+                                        }
+                                    }
+                                }
+                            })
+                            ->helperText('Select the cell leader (mentor) for this disciple. Only users with the same gender as you are shown. If the cell leader is a primary leader, they will automatically be set as the network leader. If the cell leader has a network leader, it will be inherited.')
+                            ->dehydrated(false)
+                            ->afterStateHydrated(function ($component, $state, $record, $livewire) {
+                                if ($record) {
+                                    // Get the active discipleship for this user (where user is the disciple)
+                                    $discipleship = \App\Models\Discipleship::where('disciple_id', $record->id)
+                                        ->where('status', 'active')
+                                        ->with('mentor')
+                                        ->first();
+
+                                    if ($discipleship && $discipleship->mentor) {
+                                        $mentorId = $discipleship->mentor->id;
+                                        $component->state($mentorId);
+                                        // Also set the Livewire property
+                                        if (property_exists($livewire, 'cellLeaderId')) {
+                                            $livewire->cellLeaderId = $mentorId;
+                                        }
+                                    } else {
+                                        // No active discipleship, clear the field
+                                        $component->state(null);
+                                        if (property_exists($livewire, 'cellLeaderId')) {
+                                            $livewire->cellLeaderId = null;
+                                        }
+                                    }
+                                }
+                            }),
+                        Forms\Components\Select::make('primary_user_id')
+                            ->label('Network Leader')
+                            ->options(function ($record, $get) {
+                                // If cell leader is selected and has a network leader, use that
+                                $cellLeaderId = $get('cell_leader_id');
+                                if ($cellLeaderId) {
+                                    $cellLeader = \App\Models\User::find($cellLeaderId);
+                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
+                                        // Cell leader has a network leader, return only that option
+                                        $networkLeader = \App\Models\User::find($cellLeader->primary_user_id);
+                                        if ($networkLeader) {
+                                            return [$networkLeader->id => $networkLeader->name];
+                                        }
+                                    }
+                                }
+
+                                $query = \App\Models\User::where('is_primary_leader', true)
+                                    ->orderBy('first_name')->orderBy('last_name');
+
                                 // Exclude logged-in user
                                 if (Auth::check()) {
                                     $query->where('id', '!=', Auth::id());
                                 }
+                                // Exclude the user being edited
+                                if ($record) {
+                                    $query->where('id', '!=', $record->id);
+                                }
 
+                                return $query->get()->mapWithKeys(function ($user) {
+                                    return [$user->id => $user->name];
+                                })->toArray();
+                            })
+                            ->getSearchResultsUsing(function (string $search, $record, $get): array {
+                                // If cell leader is selected and has a network leader, use that
+                                $cellLeaderId = $get('cell_leader_id');
+                                if ($cellLeaderId) {
+                                    $cellLeader = \App\Models\User::find($cellLeaderId);
+                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
+                                        // Cell leader has a network leader, return only that option
+                                        $networkLeader = \App\Models\User::find($cellLeader->primary_user_id);
+                                        if ($networkLeader) {
+                                            return [$networkLeader->id => $networkLeader->name];
+                                        }
+                                    }
+                                }
+
+                                $query = \App\Models\User::where('is_primary_leader', true)
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('first_name', 'like', "%{$search}%")
+                                          ->orWhere('last_name', 'like', "%{$search}%");
+                                    })
+                                    ->orderBy('first_name')->orderBy('last_name');
+
+                                // Exclude logged-in user
+                                if (Auth::check()) {
+                                    $query->where('id', '!=', Auth::id());
+                                }
                                 // Exclude the user being edited
                                 if ($record) {
                                     $query->where('id', '!=', $record->id);
@@ -123,47 +229,34 @@ class UserResource extends Resource
                             )
                             ->searchable()
                             ->preload()
-                            ->helperText('Select the cell leader (mentor) for this member. Only users with the same gender as you are shown.')
-                            ->dehydrated(false)
-                            ->afterStateHydrated(function ($component, $state, $record) {
-                                if ($record) {
-                                    $discipleship = $record->mentor;
-                                    if ($discipleship && $discipleship->mentor) {
-                                        $component->state($discipleship->mentor->id);
+                            ->reactive()
+                            ->disabled(function ($get) {
+                                // Disable if cell leader is selected and has a network leader
+                                $cellLeaderId = $get('cell_leader_id');
+                                if ($cellLeaderId) {
+                                    $cellLeader = \App\Models\User::find($cellLeaderId);
+                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
+                                        return true; // Disable because cell leader has a network leader
                                     }
                                 }
+                                return false;
+                            })
+                            ->afterStateUpdated(function ($state, $set) {
+                                // If network leader is set, automatically set as cell leader
+                                if ($state) {
+                                    $set('cell_leader_id', $state);
+                                }
+                            })
+                            ->helperText(function ($get) {
+                                $cellLeaderId = $get('cell_leader_id');
+                                if ($cellLeaderId) {
+                                    $cellLeader = \App\Models\User::find($cellLeaderId);
+                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
+                                        return 'Network leader is automatically inherited from the selected cell leader.';
+                                    }
+                                }
+                                return 'Select the network leader (primary leader) for this disciple. They will automatically be set as the cell leader. All disciples will inherit this network leader.';
                             }),
-                        Forms\Components\Select::make('network_leader_id')
-                            ->label('Network Leader')
-                            ->relationship('networkLeader', 'name', function ($query, $record) {
-                                // Exclude logged-in user
-                                if (Auth::check()) {
-                                    $query->where('id', '!=', Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-                            })
-                            ->searchable()
-                            ->preload()
-                            ->helperText('Select the network leader for this member'),
-                        Forms\Components\Select::make('primary_user_id')
-                            ->label('Primary User')
-                            ->relationship('primaryUser', 'name', function ($query, $record) {
-                                $query->where('is_primary_leader', true);
-                                // Exclude logged-in user
-                                if (Auth::check()) {
-                                    $query->where('id', '!=', Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-                            })
-                            ->searchable()
-                            ->preload()
-                            ->helperText('Select the primary user (primary leader) for this member'),
                         Forms\Components\Select::make('attendance_status')
                             ->options([
                                 '1st' => '1st Time',
@@ -174,6 +267,15 @@ class UserResource extends Resource
                             ])
                             ->default('1st')
                             ->required(),
+                        Forms\Components\Select::make('category')
+                            ->label('Category')
+                            ->options([
+                                'C1' => 'C1 - Engaged in all 4 (Sunday Service, Cell Group, Devotion, Training)',
+                                'C2' => 'C2 - Engaged in 3 activities',
+                                'C3' => 'C3 - Engaged in 2 activities',
+                                'C4' => 'C4 - Engaged in 1 or fewer activities',
+                            ])
+                            ->helperText('Category is automatically calculated based on engagement. You can manually override it here.'),
                         Forms\Components\DatePicker::make('first_attendance_date')
                             ->label('First Attendance Date'),
                         Forms\Components\DatePicker::make('last_attendance_date')
@@ -204,13 +306,21 @@ class UserResource extends Resource
                             ->label('Super Admin')
                             ->default(false)
                             ->helperText('Grant super admin privileges to this user'),
+                        Forms\Components\Toggle::make('is_network_admin')
+                            ->label('Network Admin')
+                            ->default(false)
+                            ->helperText('Can view and manage the entire network'),
+                        Forms\Components\Toggle::make('is_equipping_admin')
+                            ->label('Equipping Admin')
+                            ->default(false)
+                            ->helperText('Equipping admin privileges (for future use)'),
                     ])->columns(2),
 
                 Forms\Components\Section::make('Invitation')
                     ->schema([
                         Forms\Components\Placeholder::make('auto_assigned')
                             ->label('Network Assignment')
-                            ->content('This member will automatically be added to your network as your disciple.')
+                            ->content('This disciple will automatically be added to your network.')
                             ->visible(fn (string $context): bool => $context === 'create' && Auth::check()),
                     ])
                     ->visible(fn (string $context): bool => $context === 'create'),
@@ -225,12 +335,12 @@ class UserResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        // If user is logged in, only show their network (unless they're a super admin)
+        // If user is logged in, only show their network (unless they're a super admin or network admin)
         if (Auth::check()) {
             /** @var User $user */
             $user = Auth::user();
-            // Super admins can see all users
-            if ($user && $user->is_super_admin) {
+            // Super admins and network admins can see all users
+            if ($user && ($user->is_super_admin || $user->is_network_admin)) {
                 return $query;
             }
             if ($user && method_exists($user, 'getNetworkUserIds')) {
@@ -278,6 +388,15 @@ class UserResource extends Resource
                         'primary' => '4th',
                         'gray' => 'regular',
                     ]),
+                Tables\Columns\BadgeColumn::make('category')
+                    ->label('Category')
+                    ->colors([
+                        'success' => 'C1',
+                        'primary' => 'C2',
+                        'warning' => 'C3',
+                        'danger' => 'C4',
+                    ])
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('total_attendances')
                     ->label('Total Attendances')
                     ->sortable(),
@@ -297,20 +416,24 @@ class UserResource extends Resource
                         'primary' => 'male',
                         'success' => 'female',
                     ]),
-                Tables\Columns\TextColumn::make('networkLeader.name')
+                Tables\Columns\TextColumn::make('primaryUser.name')
                     ->label('Network Leader')
                     ->sortable()
                     ->placeholder('No network leader'),
-                Tables\Columns\TextColumn::make('primaryUser.name')
-                    ->label('Primary User')
-                    ->sortable()
-                    ->placeholder('No primary user'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('category')
+                    ->label('Category')
+                    ->options([
+                        'C1' => 'C1 - Engaged in all 4',
+                        'C2' => 'C2 - Engaged in 3',
+                        'C3' => 'C3 - Engaged in 2',
+                        'C4' => 'C4 - Engaged in 1 or fewer',
+                    ]),
                 Tables\Filters\SelectFilter::make('attendance_status')
                     ->options([
                         '1st' => '1st Time',

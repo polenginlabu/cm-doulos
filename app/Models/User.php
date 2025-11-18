@@ -20,7 +20,6 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name', // Keep for backward compatibility, but prefer first_name and last_name
         'first_name',
         'last_name',
         'email',
@@ -32,11 +31,13 @@ class User extends Authenticatable
         'last_attendance_date',
         'total_attendances',
         'cell_group_id',
-        'network_leader_id',
         'primary_user_id',
         'gender',
         'is_primary_leader',
         'is_super_admin',
+        'is_network_admin',
+        'is_equipping_admin',
+        'category',
         'notes',
         'invitation_token',
         'invited_at',
@@ -71,6 +72,8 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'is_primary_leader' => 'boolean',
             'is_super_admin' => 'boolean',
+            'is_network_admin' => 'boolean',
+            'is_equipping_admin' => 'boolean',
         ];
     }
 
@@ -151,11 +154,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the network leader of this user.
+     * Get the network leader of this user (alias for primaryUser).
      */
     public function networkLeader()
     {
-        return $this->belongsTo(User::class, 'network_leader_id');
+        return $this->primaryUser();
     }
 
     /**
@@ -167,11 +170,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Get all users who have this user as their network leader.
+     * Get all users who have this user as their network leader (alias for primaryUserMembers).
      */
     public function networkLeaderMembers()
     {
-        return $this->hasMany(User::class, 'network_leader_id');
+        return $this->hasMany(User::class, 'primary_user_id');
     }
 
     /**
@@ -231,6 +234,89 @@ class User extends Authenticatable
     }
 
     /**
+     * Get all training enrollments for this user.
+     */
+    public function trainingEnrollments()
+    {
+        return $this->hasMany(TrainingEnrollment::class);
+    }
+
+    /**
+     * Calculate and update the user's category based on engagement.
+     *
+     * Categories:
+     * C1: Engaged in all 4 (Sunday Service, Cell Group, Devotion, Training)
+     * C2: Engaged in 3 activities
+     * C3: Engaged in 2 activities
+     * C4: Engaged in 1 or fewer activities
+     */
+    public function calculateCategory(): string
+    {
+        $engagements = 0;
+
+        // Check Sunday Service engagement (has at least one attendance in last 30 days)
+        $hasSundayService = $this->attendances()
+            ->where('attendance_type', 'sunday_service')
+            ->where('is_present', true)
+            ->where('attendance_date', '>=', now()->subDays(30))
+            ->exists();
+        if ($hasSundayService) {
+            $engagements++;
+        }
+
+        // Check Cell Group engagement (has cell_group_id OR has cell group attendance in last 30 days)
+        $hasCellGroup = $this->cell_group_id !== null ||
+            $this->attendances()
+                ->where('attendance_type', 'cell_group')
+                ->where('is_present', true)
+                ->where('attendance_date', '>=', now()->subDays(30))
+                ->exists();
+        if ($hasCellGroup) {
+            $engagements++;
+        }
+
+        // Check Devotion engagement
+        // TODO: Implement devotion tracking when available
+        // For now, we'll check if there's a devotion model/table
+        // If devotion tracking exists, uncomment and implement:
+        // $hasDevotion = $this->devotions()->where('devotion_date', '>=', now()->subDays(30))->exists();
+        $hasDevotion = false; // Placeholder - set to true when devotion tracking is implemented
+        if ($hasDevotion) {
+            $engagements++;
+        }
+
+        // Check Training engagement (has active training enrollments)
+        $hasTraining = $this->trainingEnrollments()
+            ->where('status', 'active')
+            ->exists();
+        if ($hasTraining) {
+            $engagements++;
+        }
+
+        // Determine category based on number of engagements
+        // Note: Since devotion is not yet implemented, max engagements is 3 for now
+        // When devotion is implemented, max will be 4
+        if ($engagements >= 4) {
+            return 'C1';
+        } elseif ($engagements >= 3) {
+            return 'C2';
+        } elseif ($engagements >= 2) {
+            return 'C3';
+        } else {
+            return 'C4';
+        }
+    }
+
+    /**
+     * Update the user's category based on current engagement.
+     */
+    public function updateCategory(): void
+    {
+        $this->category = $this->calculateCategory();
+        $this->saveQuietly();
+    }
+
+    /**
      * Check if a user is in this user's network.
      */
     public function isInNetwork($userId)
@@ -239,16 +325,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the user's full name (for backward compatibility).
-     * Combines first_name and last_name, or falls back to name if available.
+     * Get the user's full name.
+     * Combines first_name and last_name.
      */
     public function getNameAttribute()
     {
-        if ($this->first_name || $this->last_name) {
-            return trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? ''));
-        }
-
-        // Fallback to name column if first_name and last_name are not set
-        return $this->attributes['name'] ?? '';
+        return trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? ''));
     }
 }

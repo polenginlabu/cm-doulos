@@ -81,7 +81,7 @@ class FamilyTree extends Page
 
         // Load all user data in ONE query
         $userMap = User::whereIn('id', $networkUserIds)
-            ->select('id', 'name', 'email', 'attendance_status', 'total_attendances')
+            ->select('id', 'first_name', 'last_name', 'email', 'attendance_status', 'total_attendances', 'is_primary_leader', 'is_network_admin', 'is_equipping_admin')
             ->get()
             ->keyBy('id');
 
@@ -140,13 +140,21 @@ class FamilyTree extends Page
         }
 
         $user = $userMap[$userId];
+
+        // Count total disciples recursively
+        $discipleCount = $this->countTotalDisciples($userId, $allDiscipleships);
+
         $data = [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'attendance_status' => $user->attendance_status,
             'total_attendances' => $user->total_attendances,
+            'is_primary_leader' => $user->is_primary_leader,
+            'is_network_admin' => $user->is_network_admin,
+            'is_equipping_admin' => $user->is_equipping_admin,
             'level' => $level,
+            'disciple_count' => $discipleCount,
             'children' => [],
         ];
 
@@ -206,6 +214,36 @@ class FamilyTree extends Page
             'direct_disciples' => $directDisciples,
             'total_levels' => $maxDepth,
         ];
+    }
+
+    /**
+     * Count total disciples recursively
+     */
+    protected function countTotalDisciples(int $userId, array $allDiscipleships): int
+    {
+        $count = 0;
+        $queue = [$userId];
+        $processed = [];
+
+        while (!empty($queue)) {
+            $currentId = array_shift($queue);
+
+            if (isset($processed[$currentId])) {
+                continue;
+            }
+            $processed[$currentId] = true;
+
+            if (isset($allDiscipleships[$currentId])) {
+                foreach ($allDiscipleships[$currentId] as $discipleId) {
+                    if (!isset($processed[$discipleId])) {
+                        $count++;
+                        $queue[] = $discipleId;
+                    }
+                }
+            }
+        }
+
+        return $count;
     }
 
     /**

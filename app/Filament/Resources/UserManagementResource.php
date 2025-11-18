@@ -25,12 +25,14 @@ class UserManagementResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Users';
 
+    protected static ?string $navigationGroup = 'Network Management';
+
     protected static ?int $navigationSort = 2;
 
     public static function canAccess(): bool
     {
-        // Only allow access if user is super admin
-        return Auth::check() && Auth::user()->is_super_admin;
+        // Only allow access if user is super admin or network admin
+        return Auth::check() && (Auth::user()->is_super_admin || Auth::user()->is_network_admin);
     }
 
     public static function form(Form $form): Form
@@ -127,7 +129,17 @@ class UserManagementResource extends Resource
                             )
                             ->searchable()
                             ->preload()
-                            ->helperText('Select the cell leader (mentor) for this member. Only users with the same gender as you are shown.')
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, $set, $get) {
+                                // If cell leader is a primary leader, automatically set as primary user
+                                if ($state) {
+                                    $cellLeader = \App\Models\User::find($state);
+                                    if ($cellLeader && $cellLeader->is_primary_leader) {
+                                        $set('primary_user_id', $state);
+                                    }
+                                }
+                            })
+                            ->helperText('Select the cell leader (mentor) for this member. Only users with the same gender as you are shown. If the cell leader is a primary leader, they will automatically be set as the primary user.')
                             ->dehydrated(false)
                             ->afterStateHydrated(function ($component, $state, $record) {
                                 if ($record) {
@@ -137,25 +149,12 @@ class UserManagementResource extends Resource
                                     }
                                 }
                             }),
-                        Forms\Components\Select::make('network_leader_id')
-                            ->label('Network Leader')
-                            ->relationship('networkLeader', 'name', function ($query, $record) {
-                                // Exclude logged-in user
-                                if (\Illuminate\Support\Facades\Auth::check()) {
-                                    $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-                            })
-                            ->searchable()
-                            ->preload()
-                            ->helperText('Select the network leader for this member'),
                         Forms\Components\Select::make('primary_user_id')
                             ->label('Primary User')
-                            ->relationship('primaryUser', 'name', function ($query, $record) {
-                                $query->where('is_primary_leader', true);
+                            ->options(function ($record) {
+                                $query = \App\Models\User::where('is_primary_leader', true)
+                                    ->orderBy('first_name')->orderBy('last_name');
+
                                 // Exclude logged-in user
                                 if (\Illuminate\Support\Facades\Auth::check()) {
                                     $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
@@ -164,10 +163,45 @@ class UserManagementResource extends Resource
                                 if ($record) {
                                     $query->where('id', '!=', $record->id);
                                 }
+
+                                return $query->get()->mapWithKeys(function ($user) {
+                                    return [$user->id => $user->name];
+                                })->toArray();
                             })
+                            ->getSearchResultsUsing(function (string $search, $record): array {
+                                $query = \App\Models\User::where('is_primary_leader', true)
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('first_name', 'like', "%{$search}%")
+                                          ->orWhere('last_name', 'like', "%{$search}%");
+                                    })
+                                    ->orderBy('first_name')->orderBy('last_name');
+
+                                // Exclude logged-in user
+                                if (\Illuminate\Support\Facades\Auth::check()) {
+                                    $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
+                                }
+                                // Exclude the user being edited
+                                if ($record) {
+                                    $query->where('id', '!=', $record->id);
+                                }
+
+                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
+                                    return [$user->id => $user->name];
+                                })->toArray();
+                            })
+                            ->getOptionLabelUsing(fn ($value): ?string =>
+                                \App\Models\User::find($value)?->name
+                            )
                             ->searchable()
                             ->preload()
-                            ->helperText('Select the primary user (primary leader) for this member'),
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, $set) {
+                                // If primary user is set, automatically set as cell leader
+                                if ($state) {
+                                    $set('cell_leader_id', $state);
+                                }
+                            })
+                            ->helperText('Select the primary user (primary leader) for this member. They will automatically be set as the cell leader. All disciples will inherit this primary user.'),
                         Forms\Components\Select::make('attendance_status')
                             ->options([
                                 '1st' => '1st Time',
@@ -208,6 +242,14 @@ class UserManagementResource extends Resource
                             ->label('Super Admin')
                             ->default(false)
                             ->helperText('Grant super admin privileges to this user'),
+                        Forms\Components\Toggle::make('is_network_admin')
+                            ->label('Network Admin')
+                            ->default(false)
+                            ->helperText('Can view and manage the entire network'),
+                        Forms\Components\Toggle::make('is_equipping_admin')
+                            ->label('Equipping Admin')
+                            ->default(false)
+                            ->helperText('Equipping admin privileges (for future use)'),
                     ])->columns(2),
 
                 Forms\Components\Textarea::make('notes')
@@ -266,10 +308,6 @@ class UserManagementResource extends Resource
                         'primary' => 'male',
                         'success' => 'female',
                     ]),
-                Tables\Columns\TextColumn::make('networkLeader.name')
-                    ->label('Network Leader')
-                    ->sortable()
-                    ->placeholder('No network leader'),
                 Tables\Columns\TextColumn::make('primaryUser.name')
                     ->label('Primary User')
                     ->sortable()

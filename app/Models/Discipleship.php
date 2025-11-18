@@ -36,6 +36,15 @@ class Discipleship extends Model
             if ($discipleship->mentor_id === $discipleship->disciple_id) {
                 return false; // Prevent creation
             }
+
+            // CRITICAL: If this is being set as active, deactivate all other active discipleships for this disciple
+            // This ensures a disciple can only have ONE active mentor at a time
+            if ($discipleship->status === 'active') {
+                Discipleship::where('disciple_id', $discipleship->disciple_id)
+                    ->where('status', 'active')
+                    ->where('id', '!=', $discipleship->id ?? 0) // Exclude current record if it exists
+                    ->update(['status' => 'inactive']);
+            }
         });
 
         static::created(function ($discipleship) {
@@ -66,6 +75,15 @@ class Discipleship extends Model
             // Prevent self-mentorship
             if ($discipleship->mentor_id === $discipleship->disciple_id) {
                 return false; // Prevent update
+            }
+
+            // CRITICAL: If this is being set as active, deactivate all other active discipleships for this disciple
+            // This ensures a disciple can only have ONE active mentor at a time
+            if ($discipleship->isDirty('status') && $discipleship->status === 'active') {
+                Discipleship::where('disciple_id', $discipleship->disciple_id)
+                    ->where('status', 'active')
+                    ->where('id', '!=', $discipleship->id) // Exclude current record
+                    ->update(['status' => 'inactive']);
             }
         });
     }

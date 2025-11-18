@@ -18,6 +18,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Illuminate\Support\Facades\Route;
 
 class CellsPanelProvider extends PanelProvider
 {
@@ -30,6 +31,18 @@ class CellsPanelProvider extends PanelProvider
             ->login(\App\Filament\Pages\Auth\Login::class)
             ->brandName('Cell Monitoring')
             ->homeUrl(fn () => FamilyTree::getUrl())
+            ->routes(function () {
+                Route::middleware(['web', 'auth'])
+                    ->prefix('network-overview')
+                    ->name('network-overview.')
+                    ->group(function () {
+                        Route::get('/get-disciples/{userId}', function (int $userId) {
+                            $page = new \App\Filament\Resources\NetworkOverviewResource\Pages\NetworkTree();
+                            $disciples = $page->getDisciples($userId);
+                            return response()->json($disciples);
+                        })->name('get-disciples');
+                    });
+            })
             ->colors([
                 'primary' => Color::Green,
             ])

@@ -44,7 +44,7 @@ class RegistrationController extends Controller
             'email' => 'required|email|unique:users,email|max:255',
             'contact' => 'nullable|string|max:255',
             'mentor_id' => 'nullable|exists:users,id',
-            'network_leader_id' => 'nullable|exists:users,id',
+            'primary_user_id' => 'nullable|exists:users,id',
             'gender' => 'nullable|in:male,female',
         ]);
 
@@ -58,10 +58,9 @@ class RegistrationController extends Controller
         $user = User::create([
             'first_name' => $request->first_name,
             'last_name' => $request->last_name,
-            'name' => trim($request->first_name . ' ' . $request->last_name), // Keep for backward compatibility
             'email' => $request->email,
             'phone' => $request->contact,
-            'network_leader_id' => $request->network_leader_id,
+            'primary_user_id' => $request->primary_user_id,
             'gender' => $request->gender,
             'password' => Hash::make(Str::random(16)), // Generate random password
             'is_active' => false, // User needs to be activated by admin
@@ -77,9 +76,9 @@ class RegistrationController extends Controller
             ]);
         }
         // If network leader is set and no mentor, create discipleship relationship
-        elseif ($request->network_leader_id) {
+        elseif ($request->primary_user_id) {
             \App\Models\Discipleship::create([
-                'mentor_id' => $request->network_leader_id,
+                'mentor_id' => $request->primary_user_id,
                 'disciple_id' => $user->id,
                 'started_at' => now(),
                 'status' => 'active',

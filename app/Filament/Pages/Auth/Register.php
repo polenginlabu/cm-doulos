@@ -123,7 +123,7 @@ class Register extends BaseRegister
 
     protected function getNetworkLeaderFormComponent(): Component
     {
-        return Select::make('network_leader_id')
+        return Select::make('primary_user_id')
             ->label('Network Leader')
             ->options(function () {
                 $query = User::where('is_active', true)
@@ -169,11 +169,6 @@ class Register extends BaseRegister
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Combine first_name and last_name into name for backward compatibility
-        if (isset($data['first_name']) || isset($data['last_name'])) {
-            $data['name'] = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
-        }
-
         // Set is_active to false - user needs admin activation
         $data['is_active'] = false;
 
@@ -196,9 +191,9 @@ class Register extends BaseRegister
 
         // If network leader is set, create discipleship relationship (network leader as mentor)
         // Note: This will fail if mentor_id is also set, due to one-to-one constraint
-        if ($data['network_leader_id'] ?? null && !($data['mentor_id'] ?? null)) {
+        if ($data['primary_user_id'] ?? null && !($data['mentor_id'] ?? null)) {
             Discipleship::create([
-                'mentor_id' => $data['network_leader_id'],
+                'mentor_id' => $data['primary_user_id'],
                 'disciple_id' => $user->id,
                 'started_at' => now(),
                 'status' => 'active',

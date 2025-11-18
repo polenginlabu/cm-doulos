@@ -9,6 +9,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use App\Models\User;
 
 class DisciplesRelationManager extends RelationManager
 {
@@ -24,20 +25,52 @@ class DisciplesRelationManager extends RelationManager
             ->schema([
                 Forms\Components\Select::make('disciple_id')
                     ->label('Disciple')
-                    ->relationship(
-                        'disciple',
-                        'name',
-                        function (Builder $query) {
-                            // Filter by owner's (mentor's) gender
-                            if ($this->ownerRecord && $this->ownerRecord->gender) {
-                                $query->where('gender', $this->ownerRecord->gender);
-                            }
-                            
-                            // Only show users not already in an active discipleship
-                            return $query->whereDoesntHave('discipleships', function ($q) {
-                                $q->where('status', 'active');
-                            });
+                    ->options(function () {
+                        $query = User::query();
+
+                        // Filter by owner's (mentor's) gender
+                        if ($this->ownerRecord && $this->ownerRecord->gender) {
+                            $query->where('gender', $this->ownerRecord->gender);
                         }
+
+                        // Only show users not already in an active discipleship
+                        $query->whereDoesntHave('discipleships', function ($q) {
+                            $q->where('status', 'active');
+                        });
+
+                        return $query->orderBy('first_name')->orderBy('last_name')
+                            ->get()
+                            ->mapWithKeys(function ($user) {
+                                return [$user->id => $user->name];
+                            })
+                            ->toArray();
+                    })
+                    ->getSearchResultsUsing(function (string $search): array {
+                        $query = User::where(function ($q) use ($search) {
+                            $q->where('first_name', 'like', "%{$search}%")
+                              ->orWhere('last_name', 'like', "%{$search}%");
+                        })
+                            ->orderBy('first_name')->orderBy('last_name');
+
+                        // Filter by owner's (mentor's) gender
+                        if ($this->ownerRecord && $this->ownerRecord->gender) {
+                            $query->where('gender', $this->ownerRecord->gender);
+                        }
+
+                        // Only show users not already in an active discipleship
+                        $query->whereDoesntHave('discipleships', function ($q) {
+                            $q->where('status', 'active');
+                        });
+
+                        return $query->limit(50)
+                            ->get()
+                            ->mapWithKeys(function ($user) {
+                                return [$user->id => $user->name];
+                            })
+                            ->toArray();
+                    })
+                    ->getOptionLabelUsing(fn ($value): ?string =>
+                        User::find($value)?->name
                     )
                     ->searchable()
                     ->preload()

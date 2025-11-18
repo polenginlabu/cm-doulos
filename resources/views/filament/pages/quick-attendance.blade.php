@@ -1,21 +1,20 @@
 <x-filament-panels::page>
     <div class="space-y-6">
-        <!-- Header -->
-        <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                </svg>
-            </div>
-            <div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Attendance Dashboard</h2>
+        <!-- Title with Attendance Type Dropdown -->
+        <div class="flex items-center justify-between gap-4 mb-6">
+            {{-- <div>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Mark Weekly Attendance</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400">Track weekly attendance for all team members</p>
+            </div> --}}
+            <div class="w-64">
+                {{ $this->form }}
             </div>
         </div>
 
         <!-- Week Navigation -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div class="flex items-center justify-center gap-4">
+
+            <div class="mt-4 flex items-center justify-center gap-4">
                 <button type="button"
                         wire:click="previousWeek"
                         class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition">
@@ -62,17 +61,30 @@
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Present</p>
-                <p class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">{{ $attendanceSummary['sunday_service'] ?? 0 }}</p>
+                <p class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">{{ $attendanceSummary['present'] ?? 0 }}</p>
             </div>
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Absent</p>
-                <p class="text-3xl font-bold text-red-600 dark:text-red-400 mt-2">{{ ($attendanceSummary['total_members'] ?? 0) - ($attendanceSummary['sunday_service'] ?? 0) }}</p>
+                <p class="text-3xl font-bold text-red-600 dark:text-red-400 mt-2">{{ $attendanceSummary['absent'] ?? 0 }}</p>
             </div>
         </div>
 
         <!-- Members List with Filament Table -->
         <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Sunday Service Attendance</h3>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                @php
+                    $typeLabels = [
+                        'sunday_service' => 'Sunday Service',
+                        'crossover' => 'CrossOver',
+                        'wildsons' => 'WildSons',
+                        'cell_group' => 'Cell Group',
+                        'service' => 'Service',
+                        'event' => 'Event',
+                    ];
+                    $selectedType = $selectedAttendanceType ?? 'sunday_service';
+                    echo ($typeLabels[$selectedType] ?? ucfirst(str_replace('_', ' ', $selectedType))) . ' Attendance';
+                @endphp
+            </h3>
             {{ $this->table }}
         </div>
         @endif

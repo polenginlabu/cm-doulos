@@ -7,6 +7,7 @@ use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use App\Models\Discipleship;
 
 class CreateUser extends CreateRecord
@@ -55,6 +56,26 @@ class CreateUser extends CreateRecord
             $data['invited_by'] = Auth::id();
         }
 
+        // Auto-link cell leader and primary user
+        // If cell leader is a primary leader, set as primary user
+        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
+            $cellLeader = \App\Models\User::find($data['cell_leader_id']);
+            if ($cellLeader) {
+                // If cell leader is a primary leader, set as primary user
+                if ($cellLeader->is_primary_leader) {
+                    $data['primary_user_id'] = $data['cell_leader_id'];
+                }
+                // Otherwise, inherit primary_user_id from cell leader
+                elseif ($cellLeader->primary_user_id) {
+                    $data['primary_user_id'] = $cellLeader->primary_user_id;
+                }
+            }
+        }
+        // If primary user is set, set as cell leader
+        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
+            $data['cell_leader_id'] = $data['primary_user_id'];
+        }
+
         return $data;
     }
 
@@ -63,12 +84,24 @@ class CreateUser extends CreateRecord
         $user = $this->record;
         $data = $this->data;
 
-        // Helper function to create discipleship relationship
-        $createDiscipleship = function ($mentorId) use ($user) {
-            if (!$mentorId) {
-                return true;
-            }
+        // CRITICAL: A disciple can ONLY have ONE active mentor at a time
+        // The cell_leader_id is the SINGLE SOURCE OF TRUTH
 
+        // Determine the mentor (cell_leader_id takes priority)
+        $mentorId = $data['cell_leader_id'] ?? null;
+
+        // If no cell_leader_id but primary_user_id is set, use primary_user_id
+        if (!$mentorId && isset($data['primary_user_id']) && $data['primary_user_id']) {
+            $mentorId = $data['primary_user_id'];
+        }
+
+        // Fallback: If still no mentor and user is logged in, use current user
+        if (!$mentorId && Auth::check() && Auth::id() != $user->id) {
+            $mentorId = Auth::id();
+        }
+
+        // If we have a mentor, create the discipleship
+        if ($mentorId) {
             // Prevent self-mentorship
             if ($mentorId === $user->id) {
                 \Filament\Notifications\Notification::make()
@@ -76,71 +109,53 @@ class CreateUser extends CreateRecord
                     ->body('A user cannot be their own cell leader.')
                     ->danger()
                     ->send();
-                return false;
+                return;
             }
 
-            // Deactivate any existing active discipleship for this disciple (one-to-one constraint)
-            Discipleship::where('disciple_id', $user->id)
-                ->where('status', 'active')
-                ->where('mentor_id', '!=', $mentorId)
-                ->update(['status' => 'inactive']);
-
-            // Check if discipleship already exists
-            $existingDiscipleship = Discipleship::where('mentor_id', $mentorId)
-                ->where('disciple_id', $user->id)
-                ->first();
-
             try {
-                if (!$existingDiscipleship) {
-                    Discipleship::create([
-                        'mentor_id' => $mentorId,
-                        'disciple_id' => $user->id,
-                        'started_at' => now(),
-                        'status' => 'active',
-                    ]);
-                } else {
-                    // Reactivate if exists
-                    $existingDiscipleship->update([
-                        'status' => 'active',
-                        'started_at' => now(),
-                    ]);
-                }
-                return true;
+                DB::transaction(function () use ($user, $mentorId) {
+                    // CRITICAL: Deactivate ALL existing active discipleships for this disciple FIRST
+                    // This ensures a disciple can only have ONE active mentor at a time
+                    Discipleship::where('disciple_id', $user->id)
+                        ->where('status', 'active')
+                        ->update(['status' => 'inactive']);
+
+                    // Check if discipleship already exists (shouldn't happen for new users, but just in case)
+                    $existingDiscipleship = Discipleship::where('mentor_id', $mentorId)
+                        ->where('disciple_id', $user->id)
+                        ->lockForUpdate() // Lock the row to prevent race conditions
+                        ->first();
+
+                    if ($existingDiscipleship) {
+                        // Reactivate if exists
+                        $existingDiscipleship->update([
+                            'status' => 'active',
+                            'started_at' => $existingDiscipleship->started_at ?? now(),
+                        ]);
+                    } else {
+                        // Create new discipleship
+                        Discipleship::create([
+                            'mentor_id' => $mentorId,
+                            'disciple_id' => $user->id,
+                            'started_at' => now(),
+                            'status' => 'active',
+                        ]);
+                    }
+                });
             } catch (\Exception $e) {
                 \Filament\Notifications\Notification::make()
                     ->title('Error')
                     ->body('Failed to create cell leader relationship: ' . $e->getMessage())
                     ->danger()
                     ->send();
-                return false;
             }
-        };
-
-        // If cell_leader_id is set, create discipleship relationship (cell leader as mentor)
-        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
-            $createDiscipleship($data['cell_leader_id']);
         }
 
-        // If primary_user_id is set, create discipleship relationship (primary user as mentor)
-        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
-            $createDiscipleship($data['primary_user_id']);
-        }
-
-        // Automatically create discipleship relationship if current user is logged in (fallback)
-        if (Auth::check() && Auth::id() != $user->id) {
-            // Only create if no other mentor relationships were created
-            $hasMentor = Discipleship::where('disciple_id', $user->id)
-                ->where('status', 'active')
-                ->exists();
-
-            if (!$hasMentor) {
-                Discipleship::create([
-                    'mentor_id' => Auth::id(),
-                    'disciple_id' => $user->id,
-                    'started_at' => now(),
-                    'status' => 'active',
-                ]);
-            }
+        // Update category based on engagement only if it wasn't manually set
+        // Check if category was manually set in the form data
+        $manualCategory = $this->data['category'] ?? null;
+        if (!$manualCategory) {
+            $user->updateCategory();
         }
     }
 

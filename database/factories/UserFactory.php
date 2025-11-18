@@ -29,7 +29,6 @@ class UserFactory extends Factory
         return [
             'first_name' => $nameParts[0] ?? '',
             'last_name' => $nameParts[1] ?? '',
-            'name' => $fullName, // Keep for backward compatibility
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),

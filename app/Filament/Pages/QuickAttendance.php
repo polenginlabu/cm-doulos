@@ -37,11 +37,14 @@ class QuickAttendance extends Page implements HasForms, HasTable
 
     protected static ?string $title = 'Mark Weekly Attendance';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?string $navigationGroup = 'Attendance';
+
+    protected static ?int $navigationSort = 1;
 
     public ?array $data = [];
 
     public $selectedDate;
+    public $selectedAttendanceType = 'sunday_service';
     public $networkMembers = [];
     public $attendanceData = [];
     public $attendanceSummary = [];
@@ -51,6 +54,14 @@ class QuickAttendance extends Page implements HasForms, HasTable
     {
         // Default to current week's Sunday
         $this->selectedDate = Carbon::now()->startOfWeek()->addDays(6)->format('Y-m-d');
+        $this->selectedAttendanceType = 'sunday_service';
+
+        // Initialize form data
+        $this->data = [
+            'selectedAttendanceType' => 'sunday_service',
+            'selectedDate' => $this->selectedDate,
+        ];
+
         $this->loadNetworkMembers();
         $this->loadAvailableWeeks();
         $this->loadExistingAttendance();
@@ -61,43 +72,26 @@ class QuickAttendance extends Page implements HasForms, HasTable
     {
         return $form
             ->schema([
-                Section::make('Select Week')
-                    ->schema([
-                        DatePicker::make('selectedDate')
-                            ->label('Sunday Date')
-                            ->default($this->selectedDate)
-                            ->required()
-                            ->weekStartsOnSunday()
-                            ->displayFormat('M d, Y')
-                            ->native(false)
-                            ->reactive()
-                            ->suffixAction(
-                                \Filament\Forms\Components\Actions\Action::make('previousWeek')
-                                    ->icon('heroicon-o-chevron-left')
-                                    ->action(function () {
-                                        $date = Carbon::parse($this->selectedDate);
-                                        $this->selectedDate = $date->subWeek()->format('Y-m-d');
-                                        $this->loadExistingAttendance();
-                                        $this->calculateSummary();
-                                    })
-                            )
-                            ->prefixAction(
-                                \Filament\Forms\Components\Actions\Action::make('nextWeek')
-                                    ->icon('heroicon-o-chevron-right')
-                                    ->action(function () {
-                                        $date = Carbon::parse($this->selectedDate);
-                                        $this->selectedDate = $date->addWeek()->format('Y-m-d');
-                                        $this->loadExistingAttendance();
-                                        $this->calculateSummary();
-                                    })
-                            )
-                            ->afterStateUpdated(function ($state) {
-                                $this->selectedDate = $state;
-                                $this->loadExistingAttendance();
-                                $this->calculateSummary();
-                            }),
+                \Filament\Forms\Components\Select::make('selectedAttendanceType')
+                    ->label('Attendance Type')
+                    ->options([
+                        'sunday_service' => 'Sunday Service (Main)',
+                        'crossover' => 'CrossOver (Young Professionals)',
+                        'wildsons' => 'WildSons (Youth)',
+                        'cell_group' => 'Cell Group',
+                        'service' => 'Service',
+                        'event' => 'Event',
                     ])
-                    ->columns(1),
+                    ->default('sunday_service')
+                    ->required()
+                    ->reactive()
+                    ->live()
+                    ->afterStateUpdated(function ($state) {
+                        $this->selectedAttendanceType = $state;
+                        $this->loadExistingAttendance();
+                        $this->calculateSummary();
+                        $this->resetTable();
+                    }),
             ])
             ->statePath('data');
     }
@@ -249,6 +243,7 @@ class QuickAttendance extends Page implements HasForms, HasTable
                     ->label('Mark Attendance')
                     ->getStateUsing(function ($record) {
                         $selectedDate = $this->selectedDate ?? null;
+                        $attendanceType = $this->selectedAttendanceType ?? 'sunday_service';
 
                         if (empty($selectedDate)) {
                             return false;
@@ -257,12 +252,13 @@ class QuickAttendance extends Page implements HasForms, HasTable
                         $date = Carbon::parse($selectedDate);
                         return Attendance::where('user_id', $record->id)
                             ->whereDate('attendance_date', $date->format('Y-m-d'))
-                            ->where('attendance_type', 'sunday_service')
+                            ->where('attendance_type', $attendanceType)
                             ->exists();
                     })
                     ->updateStateUsing(function ($record, $state) {
                         // Prevent automatic save, handle it manually
-                        $this->toggleAttendance($record->id, 'sunday_service');
+                        $attendanceType = $this->selectedAttendanceType ?? 'sunday_service';
+                        $this->toggleAttendance($record->id, $attendanceType);
                         // Return the new state so the toggle updates visually
                         return !$state;
                     })
@@ -306,7 +302,12 @@ class QuickAttendance extends Page implements HasForms, HasTable
                             ->toArray();
 
                         return User::whereIn('id', $mentorIds)
-                            ->pluck('name', 'id')
+                            ->orderBy('first_name')
+                            ->orderBy('last_name')
+                            ->get()
+                            ->mapWithKeys(function ($user) {
+                                return [$user->id => $user->name];
+                            })
                             ->toArray();
                     })
                     ->searchable()
@@ -325,7 +326,7 @@ class QuickAttendance extends Page implements HasForms, HasTable
                 TernaryFilter::make('is_active')
                     ->label('Active Status'),
             ])
-            ->defaultSort('name')
+            ->defaultSort('first_name')
             ->paginated([10]);
     }
 
@@ -334,7 +335,8 @@ class QuickAttendance extends Page implements HasForms, HasTable
         if (empty($this->selectedDate)) {
             $query = $this->getTableQuery();
             $this->attendanceSummary = [
-                'sunday_service' => 0,
+                'present' => 0,
+                'absent' => 0,
                 'total_members' => $query->count(),
             ];
             return;
@@ -344,13 +346,17 @@ class QuickAttendance extends Page implements HasForms, HasTable
         $query = $this->getTableQuery();
         $userIds = $query->pluck('id')->toArray();
 
+        $attendanceType = $this->selectedAttendanceType ?? 'sunday_service';
         $this->attendanceSummary = [
-            'sunday_service' => Attendance::whereIn('user_id', $userIds)
+            'present' => Attendance::whereIn('user_id', $userIds)
                 ->whereDate('attendance_date', $date->format('Y-m-d'))
-                ->where('attendance_type', 'sunday_service')
+                ->where('attendance_type', $attendanceType)
                 ->count(),
             'total_members' => count($userIds),
         ];
+
+        // Calculate absent count
+        $this->attendanceSummary['absent'] = $this->attendanceSummary['total_members'] - $this->attendanceSummary['present'];
     }
 
     public function loadNetworkMembers(): void
@@ -367,7 +373,8 @@ class QuickAttendance extends Page implements HasForms, HasTable
 
         $networkIds = $user->getNetworkUserIds();
         $this->networkMembers = User::whereIn('id', $networkIds)
-            ->orderBy('name')
+            ->orderBy('first_name')
+            ->orderBy('last_name')
             ->get()
             ->map(function ($member) {
                 return [

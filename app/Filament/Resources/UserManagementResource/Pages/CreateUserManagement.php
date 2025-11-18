@@ -44,6 +44,26 @@ class CreateUserManagement extends CreateRecord
             $data['password'] = Hash::make('P@ssWord1');
         }
 
+        // Auto-link cell leader and primary user
+        // If cell leader is a primary leader, set as primary user
+        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
+            $cellLeader = User::find($data['cell_leader_id']);
+            if ($cellLeader) {
+                // If cell leader is a primary leader, set as primary user
+                if ($cellLeader->is_primary_leader) {
+                    $data['primary_user_id'] = $data['cell_leader_id'];
+                }
+                // Otherwise, inherit primary_user_id from cell leader
+                elseif ($cellLeader->primary_user_id) {
+                    $data['primary_user_id'] = $cellLeader->primary_user_id;
+                }
+            }
+        }
+        // If primary user is set, set as cell leader
+        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
+            $data['cell_leader_id'] = $data['primary_user_id'];
+        }
+
         return $data;
     }
 

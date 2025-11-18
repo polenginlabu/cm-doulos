@@ -11,6 +11,8 @@ class EditUserManagement extends EditRecord
 {
     protected static string $resource = UserManagementResource::class;
 
+    protected ?int $newPrimaryUserId = null;
+
     protected function getHeaderActions(): array
     {
         return [
@@ -19,10 +21,45 @@ class EditUserManagement extends EditRecord
         ];
     }
 
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        $oldPrimaryUserId = $this->record->primary_user_id;
+
+        // Auto-link cell leader and primary user
+        // If cell leader is a primary leader, set as primary user
+        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
+            $cellLeader = \App\Models\User::find($data['cell_leader_id']);
+            if ($cellLeader) {
+                // If cell leader is a primary leader, set as primary user
+                if ($cellLeader->is_primary_leader) {
+                    $data['primary_user_id'] = $data['cell_leader_id'];
+                }
+                // Otherwise, inherit primary_user_id from cell leader
+                elseif ($cellLeader->primary_user_id) {
+                    $data['primary_user_id'] = $cellLeader->primary_user_id;
+                }
+            }
+        }
+        // If primary user is set, set as cell leader
+        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
+            $data['cell_leader_id'] = $data['primary_user_id'];
+        }
+
+        // Store for cascading update in afterSave
+        $this->newPrimaryUserId = $data['primary_user_id'] ?? $oldPrimaryUserId;
+
+        return $data;
+    }
+
     protected function afterSave(): void
     {
         $user = $this->record;
         $data = $this->data;
+
+        // Cascade primary_user_id change to all disciples
+        if (isset($this->newPrimaryUserId) && $this->newPrimaryUserId != $user->getOriginal('primary_user_id')) {
+            $this->cascadePrimaryUserToDisciples($user->id, $this->newPrimaryUserId);
+        }
 
         // Helper function to create or update discipleship relationship
         $createOrUpdateDiscipleship = function ($mentorId, $fieldName = 'mentor') use ($user) {
@@ -80,6 +117,20 @@ class EditUserManagement extends EditRecord
 
         $success = true;
 
+        // Auto-link cell leader and primary user
+        // If cell leader is a primary leader, set as primary user
+        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
+            $cellLeader = \App\Models\User::find($data['cell_leader_id']);
+            if ($cellLeader && $cellLeader->is_primary_leader) {
+                $user->primary_user_id = $data['cell_leader_id'];
+                $user->save();
+            }
+        }
+        // If primary user is set, set as cell leader
+        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
+            $data['cell_leader_id'] = $data['primary_user_id'];
+        }
+
         // If cell_leader_id is set, create discipleship relationship (cell leader as mentor)
         if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
             if (!$createOrUpdateDiscipleship($data['cell_leader_id'], 'cell leader')) {
@@ -100,6 +151,29 @@ class EditUserManagement extends EditRecord
                 ->body('User updated successfully.')
                 ->success()
                 ->send();
+        }
+    }
+
+    /**
+     * Cascade primary_user_id change to all disciples recursively
+     */
+    protected function cascadePrimaryUserToDisciples(int $mentorId, ?int $primaryUserId): void
+    {
+        // Get all active disciples of this mentor
+        $discipleships = \App\Models\Discipleship::where('mentor_id', $mentorId)
+            ->where('status', 'active')
+            ->with('disciple')
+            ->get();
+
+        foreach ($discipleships as $discipleship) {
+            $disciple = $discipleship->disciple;
+            if ($disciple && $disciple->primary_user_id != $primaryUserId) {
+                $disciple->primary_user_id = $primaryUserId;
+                $disciple->saveQuietly();
+
+                // Recursively update their disciples
+                $this->cascadePrimaryUserToDisciples($disciple->id, $primaryUserId);
+            }
         }
     }
 }

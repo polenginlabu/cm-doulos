@@ -102,70 +102,102 @@
             display: none;
         }
 
-        .tree-node {
-            display: inline-block;
-            padding: 0.75rem 1.25rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            min-width: 200px;
-            transition: all 0.3s ease;
-            cursor: pointer;
+        .tree ul:before {
+            background: #e5e7eb;
         }
 
-        .tree-node:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        .dark .tree ul:before {
+            background: #4b5563;
         }
 
-        .tree-node.root {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            font-weight: bold;
-            font-size: 1.1rem;
-        }
-
-        .tree-node.level-1 {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-
-        .tree-node.level-2 {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-        }
-
-        .tree-node.level-3 {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        }
-
-        .tree-node.level-4 {
-            background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
-        }
-
-        .tree-node.level-5 {
-            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-            color: #333;
-        }
-
-        .node-info {
-            font-size: 0.75rem;
-            opacity: 0.9;
-            margin-top: 0.25rem;
-        }
-
-        .node-badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 0.25rem;
-            font-size: 0.7rem;
-            margin-left: 0.5rem;
-        }
-
-        .dark .tree ul:before,
         .dark .tree li:before,
         .dark .tree li:after {
             border-color: #4b5563;
         }
+
+        .tree-node {
+            display: inline-flex;
+            flex-direction: column;
+            padding: 1rem;
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            min-width: 200px;
+            transition: all 0.3s ease;
+            cursor: default;
+        }
+
+        .tree-node > div {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+        }
+
+        .tree-node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .tree-node.root {
+            border-color: #a855f7;
+        }
+
+        .tree-node.level-1 {
+            border-color: #3b82f6;
+        }
+
+        .tree-node.level-2 {
+            border-color: #10b981;
+        }
+
+        .tree-node.level-3 {
+            border-color: #f59e0b;
+        }
+
+        .tree-node.level-4 {
+            border-color: #ef4444;
+        }
+
+        .tree-node.level-5 {
+            border-color: #8b5cf6;
+        }
+
+        .dark .tree-node {
+            background: #1f2937;
+            border-color: #374151;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .dark .tree-node:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+        }
+
+        .dark .tree-node.root {
+            border-color: #9333ea;
+        }
+
+        .dark .tree-node.level-1 {
+            border-color: #2563eb;
+        }
+
+        .dark .tree-node.level-2 {
+            border-color: #059669;
+        }
+
+        .dark .tree-node.level-3 {
+            border-color: #d97706;
+        }
+
+        .dark .tree-node.level-4 {
+            border-color: #dc2626;
+        }
+
+        .dark .tree-node.level-5 {
+            border-color: #7c3aed;
+        }
+
     </style>
     @endpush
 </x-filament-panels::page>

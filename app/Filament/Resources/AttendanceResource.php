@@ -19,7 +19,9 @@ class AttendanceResource extends Resource
 
     protected static ?string $navigationLabel = 'Attendances';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?string $navigationGroup = 'Attendance';
+
+    protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
     {
@@ -29,7 +31,33 @@ class AttendanceResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('user_id')
                             ->label('Member')
-                            ->relationship('user', 'name')
+                            ->options(function () {
+                                return \App\Models\User::query()
+                                    ->orderBy('first_name')
+                                    ->orderBy('last_name')
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(function ($user) {
+                                        return [$user->id => $user->name];
+                                    })
+                                    ->toArray();
+                            })
+                            ->getSearchResultsUsing(function (string $search) {
+                                return \App\Models\User::query()
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('first_name', 'like', "%{$search}%")
+                                          ->orWhere('last_name', 'like', "%{$search}%");
+                                    })
+                                    ->orderBy('first_name')
+                                    ->orderBy('last_name')
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(function ($user) {
+                                        return [$user->id => $user->name];
+                                    })
+                                    ->toArray();
+                            })
+                            ->getOptionLabelUsing(fn ($value): ?string => \App\Models\User::find($value)?->name)
                             ->searchable()
                             ->preload()
                             ->required(),
@@ -107,7 +135,16 @@ class AttendanceResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('user_id')
                     ->label('Member')
-                    ->relationship('user', 'name')
+                    ->options(function () {
+                        return \App\Models\User::query()
+                            ->orderBy('first_name')
+                            ->orderBy('last_name')
+                            ->get()
+                            ->mapWithKeys(function ($user) {
+                                return [$user->id => $user->name];
+                            })
+                            ->toArray();
+                    })
                     ->searchable(),
                 Tables\Filters\SelectFilter::make('cell_group_id')
                     ->label('Cell Group')

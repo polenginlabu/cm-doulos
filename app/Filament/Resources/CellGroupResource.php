@@ -43,7 +43,33 @@ class CellGroupResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('leader_id')
                             ->label('Leader')
-                            ->relationship('leader', 'name')
+                            ->options(function () {
+                                return \App\Models\User::query()
+                                    ->orderBy('first_name')
+                                    ->orderBy('last_name')
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(function ($user) {
+                                        return [$user->id => $user->name];
+                                    })
+                                    ->toArray();
+                            })
+                            ->getSearchResultsUsing(function (string $search) {
+                                return \App\Models\User::query()
+                                    ->where(function ($q) use ($search) {
+                                        $q->where('first_name', 'like', "%{$search}%")
+                                          ->orWhere('last_name', 'like', "%{$search}%");
+                                    })
+                                    ->orderBy('first_name')
+                                    ->orderBy('last_name')
+                                    ->limit(50)
+                                    ->get()
+                                    ->mapWithKeys(function ($user) {
+                                        return [$user->id => $user->name];
+                                    })
+                                    ->toArray();
+                            })
+                            ->getOptionLabelUsing(fn ($value): ?string => \App\Models\User::find($value)?->name)
                             ->searchable()
                             ->preload(),
                         Forms\Components\Select::make('parent_cell_group_id')
