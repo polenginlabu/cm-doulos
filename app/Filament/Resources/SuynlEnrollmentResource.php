@@ -29,6 +29,41 @@ class SuynlEnrollmentResource extends Resource
 
     protected static ?string $navigationGroup = 'Training';
 
+    /**
+     * Get filtered user IDs based on network and gender.
+     */
+    protected static function getFilteredUserIds(): array
+    {
+        if (!Auth::check()) {
+            return [];
+        }
+
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        // Super admins can see all users
+        if ($user->is_super_admin) {
+            $query = \App\Models\User::query();
+        } elseif ($user->is_network_admin) {
+            // Network admins can see all users (no network restriction)
+            $query = \App\Models\User::query();
+        } else {
+            // Regular users can only see their network
+            if (!method_exists($user, 'getNetworkUserIds')) {
+                return [$user->id];
+            }
+            $networkIds = $user->getNetworkUserIds();
+            $query = \App\Models\User::whereIn('id', $networkIds);
+        }
+
+        // Filter by gender (same gender only) - except for super admins
+        if (!$user->is_super_admin && $user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        return $query->pluck('id')->toArray();
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
@@ -44,8 +79,17 @@ class SuynlEnrollmentResource extends Resource
             }
 
             // Regular users (leaders) can only see enrollments where they are the leader
+            // AND the student is in their network
             if ($user) {
                 $query->where('leader_id', $user->id);
+
+                // Also filter by network and gender for the student
+                $filteredUserIds = static::getFilteredUserIds();
+                if (!empty($filteredUserIds)) {
+                    $query->whereIn('user_id', $filteredUserIds);
+                } else {
+                    $query->whereRaw('1 = 0');
+                }
             }
         }
 
@@ -61,7 +105,11 @@ class SuynlEnrollmentResource extends Resource
                         Forms\Components\Select::make('user_id')
                             ->label('Student')
                             ->options(function () {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->orderBy('first_name')
                                     ->orderBy('last_name')
                                     ->limit(100)
@@ -72,7 +120,11 @@ class SuynlEnrollmentResource extends Resource
                                     ->toArray();
                             })
                             ->getSearchResultsUsing(function (string $search) {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->where(function ($q) use ($search) {
                                         $q->where('first_name', 'like', "%{$search}%")
                                           ->orWhere('last_name', 'like', "%{$search}%");
@@ -187,10 +239,22 @@ class SuynlEnrollmentResource extends Resource
                 Tables\Filters\SelectFilter::make('leader_id')
                     ->label('Leader')
                     ->options(function () {
-                        return \App\Models\User::query()
-                            ->where('is_primary_leader', true)
-                            ->orWhere('is_network_admin', true)
-                            ->orderBy('first_name')
+                        if (!Auth::check()) {
+                            return [];
+                        }
+                        $user = Auth::user();
+                        $query = \App\Models\User::query()
+                            ->where(function ($q) {
+                                $q->where('is_primary_leader', true)
+                                  ->orWhere('is_network_admin', true);
+                            });
+
+                        // Gender filtering (except for super admins)
+                        if (!$user->is_super_admin && $user->gender) {
+                            $query->where('gender', $user->gender);
+                        }
+
+                        return $query->orderBy('first_name')
                             ->orderBy('last_name')
                             ->get()
                             ->mapWithKeys(function ($user) {

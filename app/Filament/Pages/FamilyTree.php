@@ -80,8 +80,14 @@ class FamilyTree extends Page
         $networkUserIds = $this->getNetworkUserIdsOptimized($user->id, $allDiscipleships);
 
         // Load all user data in ONE query
-        $userMap = User::whereIn('id', $networkUserIds)
-            ->select('id', 'first_name', 'last_name', 'email', 'attendance_status', 'total_attendances', 'is_primary_leader', 'is_network_admin', 'is_equipping_admin')
+        $query = User::whereIn('id', $networkUserIds);
+
+        // Apply gender filtering (except for super admins and network admins)
+        if (!$user->is_super_admin && !$user->is_network_admin && $user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        $userMap = $query->select('id', 'first_name', 'last_name', 'email', 'attendance_status', 'total_attendances', 'is_primary_leader', 'is_network_admin', 'is_equipping_admin')
             ->get()
             ->keyBy('id');
 

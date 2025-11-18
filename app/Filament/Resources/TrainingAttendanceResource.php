@@ -23,26 +23,61 @@ class TrainingAttendanceResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
+    /**
+     * Get filtered user IDs based on network and gender.
+     */
+    protected static function getFilteredUserIds(): array
+    {
+        if (!\Illuminate\Support\Facades\Auth::check()) {
+            return [];
+        }
+
+        /** @var \App\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        // Super admins and network admins can see all users
+        if ($user->is_super_admin || $user->is_network_admin) {
+            $query = \App\Models\User::query();
+        } else {
+            // Regular users can only see their network
+            if (!method_exists($user, 'getNetworkUserIds')) {
+                return [$user->id];
+            }
+            $networkIds = $user->getNetworkUserIds();
+            $query = \App\Models\User::whereIn('id', $networkIds);
+        }
+
+        // Filter by gender (same gender only)
+        if ($user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        return $query->pluck('id')->toArray();
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
 
-        // If user is logged in, filter by network unless they're a super admin
+        // If user is logged in, filter by network and gender unless they're a super admin or network admin
         if (\Illuminate\Support\Facades\Auth::check()) {
             /** @var \App\Models\User $user */
             $user = \Illuminate\Support\Facades\Auth::user();
 
-            // Super admins can see all attendances
+            // Super admins and network admins can see all attendances
             if ($user && ($user->is_super_admin || $user->is_network_admin)) {
                 return $query;
             }
 
             // Regular users can only see attendances from their network
-            if ($user && method_exists($user, 'getNetworkUserIds')) {
-                $networkIds = $user->getNetworkUserIds();
-                $query->whereHas('enrollment', function ($q) use ($networkIds) {
-                    $q->whereIn('user_id', $networkIds);
+            $filteredUserIds = static::getFilteredUserIds();
+            if (!empty($filteredUserIds)) {
+                $query->whereHas('enrollment', function ($q) use ($filteredUserIds) {
+                    $q->whereIn('user_id', $filteredUserIds);
                 });
+            } else {
+                // If no filtered users, show nothing
+                $query->whereRaw('1 = 0');
             }
         }
 
@@ -58,7 +93,12 @@ class TrainingAttendanceResource extends Resource
                         Forms\Components\Select::make('training_enrollment_id')
                             ->label('Enrollment')
                             ->options(function () {
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
                                 return \App\Models\TrainingEnrollment::with(['user', 'training', 'batch'])
+                                    ->whereIn('user_id', $filteredUserIds)
                                     ->orderBy('enrolled_at', 'desc')
                                     ->limit(100)
                                     ->get()
@@ -70,18 +110,25 @@ class TrainingAttendanceResource extends Resource
                                     ->toArray();
                             })
                             ->getSearchResultsUsing(function (string $search) {
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
                                 return \App\Models\TrainingEnrollment::with(['user', 'training', 'batch'])
-                                    ->whereHas('user', function ($q) use ($search) {
-                                        $q->where('first_name', 'like', "%{$search}%")
-                                          ->orWhere('last_name', 'like', "%{$search}%");
-                                    })
-                                    ->orWhereHas('training', function ($q) use ($search) {
-                                        $q->where('name', 'like', "%{$search}%")
-                                          ->orWhere('code', 'like', "%{$search}%");
-                                    })
-                                    ->orWhereHas('batch', function ($q) use ($search) {
-                                        $q->where('name', 'like', "%{$search}%")
-                                          ->orWhere('code', 'like', "%{$search}%");
+                                    ->whereIn('user_id', $filteredUserIds)
+                                    ->where(function ($q) use ($search) {
+                                        $q->whereHas('user', function ($q2) use ($search) {
+                                            $q2->where('first_name', 'like', "%{$search}%")
+                                              ->orWhere('last_name', 'like', "%{$search}%");
+                                        })
+                                        ->orWhereHas('training', function ($q2) use ($search) {
+                                            $q2->where('name', 'like', "%{$search}%")
+                                              ->orWhere('code', 'like', "%{$search}%");
+                                        })
+                                        ->orWhereHas('batch', function ($q2) use ($search) {
+                                            $q2->where('name', 'like', "%{$search}%")
+                                              ->orWhere('code', 'like', "%{$search}%");
+                                        });
                                     })
                                     ->orderBy('enrolled_at', 'desc')
                                     ->limit(50)
@@ -201,7 +248,12 @@ class TrainingAttendanceResource extends Resource
                 Tables\Filters\SelectFilter::make('training_enrollment_id')
                     ->label('Enrollment')
                     ->options(function () {
+                        $filteredUserIds = static::getFilteredUserIds();
+                        if (empty($filteredUserIds)) {
+                            return [];
+                        }
                         return \App\Models\TrainingEnrollment::with(['user', 'training', 'batch'])
+                            ->whereIn('user_id', $filteredUserIds)
                             ->orderBy('enrolled_at', 'desc')
                             ->get()
                             ->mapWithKeys(function ($enrollment) {
@@ -212,16 +264,23 @@ class TrainingAttendanceResource extends Resource
                             ->toArray();
                     })
                     ->getSearchResultsUsing(function (string $search) {
+                        $filteredUserIds = static::getFilteredUserIds();
+                        if (empty($filteredUserIds)) {
+                            return [];
+                        }
                         return \App\Models\TrainingEnrollment::with(['user', 'training', 'batch'])
-                            ->whereHas('user', function ($q) use ($search) {
-                                $q->where('first_name', 'like', "%{$search}%")
-                                  ->orWhere('last_name', 'like', "%{$search}%");
-                            })
-                            ->orWhereHas('training', function ($q) use ($search) {
-                                $q->where('name', 'like', "%{$search}%");
-                            })
-                            ->orWhereHas('batch', function ($q) use ($search) {
-                                $q->where('name', 'like', "%{$search}%");
+                            ->whereIn('user_id', $filteredUserIds)
+                            ->where(function ($q) use ($search) {
+                                $q->whereHas('user', function ($q2) use ($search) {
+                                    $q2->where('first_name', 'like', "%{$search}%")
+                                      ->orWhere('last_name', 'like', "%{$search}%");
+                                })
+                                ->orWhereHas('training', function ($q2) use ($search) {
+                                    $q2->where('name', 'like', "%{$search}%");
+                                })
+                                ->orWhereHas('batch', function ($q2) use ($search) {
+                                    $q2->where('name', 'like', "%{$search}%");
+                                });
                             })
                             ->orderBy('enrolled_at', 'desc')
                             ->limit(50)

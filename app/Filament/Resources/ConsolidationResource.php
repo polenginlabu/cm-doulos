@@ -27,6 +27,41 @@ class ConsolidationResource extends Resource
 
     protected static ?int $navigationSort = 9;
 
+    /**
+     * Get filtered user IDs based on network and gender.
+     */
+    protected static function getFilteredUserIds(): array
+    {
+        if (!Auth::check()) {
+            return [];
+        }
+
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        // Super admins can see all users
+        if ($user->is_super_admin) {
+            $query = \App\Models\User::query();
+        } elseif ($user->is_network_admin) {
+            // Network admins can see all users (no network restriction)
+            $query = \App\Models\User::query();
+        } else {
+            // Regular users can only see their network
+            if (!method_exists($user, 'getNetworkUserIds')) {
+                return [$user->id];
+            }
+            $networkIds = $user->getNetworkUserIds();
+            $query = \App\Models\User::whereIn('id', $networkIds);
+        }
+
+        // Filter by gender (same gender only) - except for super admins
+        if (!$user->is_super_admin && $user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        return $query->pluck('id')->toArray();
+    }
+
     public static function getEloquentQuery(): Builder
     {
         // Get users with 1st-4th timer status (exclude regular)
@@ -48,15 +83,24 @@ class ConsolidationResource extends Resource
             ])
             ->distinct();
 
-        // Apply network filtering if user is not super admin or network admin
+        // Apply network and gender filtering
         if (Auth::check()) {
             /** @var \App\Models\User $user */
             $user = Auth::user();
 
             if (!$user->is_super_admin && !$user->is_network_admin) {
-                // Filter to show only users in the logged-in user's network
-                $networkIds = $user->getNetworkUserIds();
-                $query->whereIn('users.id', $networkIds);
+                // Regular users: Filter to show only users in their network
+                if (method_exists($user, 'getNetworkUserIds')) {
+                    $networkIds = $user->getNetworkUserIds();
+                    $query->whereIn('users.id', $networkIds);
+                }
+            }
+            // Network admins: Can see all network members but still gender-specific
+            // Super admins: Can see everything (no gender filter)
+
+            // Apply gender filtering for all non-super-admin users
+            if (!$user->is_super_admin && $user->gender) {
+                $query->where('users.gender', $user->gender);
             }
         }
 
@@ -72,7 +116,11 @@ class ConsolidationResource extends Resource
                         Forms\Components\Select::make('user_id')
                             ->label('Member')
                             ->options(function () {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->whereIn('attendance_status', ['1st', '2nd', '3rd', '4th'])
                                     ->orderBy('first_name')
                                     ->orderBy('last_name')
@@ -84,7 +132,11 @@ class ConsolidationResource extends Resource
                                     ->toArray();
                             })
                             ->getSearchResultsUsing(function (string $search) {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->whereIn('attendance_status', ['1st', '2nd', '3rd', '4th'])
                                     ->where(function ($q) use ($search) {
                                         $q->where('first_name', 'like', "%{$search}%")
@@ -134,10 +186,22 @@ class ConsolidationResource extends Resource
                         Forms\Components\Select::make('consolidator_id')
                             ->label('Consolidator')
                             ->options(function () {
-                                return \App\Models\User::query()
-                                    ->where('is_primary_leader', true)
-                                    ->orWhere('is_network_admin', true)
-                                    ->orderBy('first_name')
+                                if (!Auth::check()) {
+                                    return [];
+                                }
+                                $user = Auth::user();
+                                $query = \App\Models\User::query()
+                                    ->where(function ($q) {
+                                        $q->where('is_primary_leader', true)
+                                          ->orWhere('is_network_admin', true);
+                                    });
+
+                                // Gender filtering (except for super admins)
+                                if (!$user->is_super_admin && $user->gender) {
+                                    $query->where('gender', $user->gender);
+                                }
+
+                                return $query->orderBy('first_name')
                                     ->orderBy('last_name')
                                     ->get()
                                     ->mapWithKeys(function ($user) {
@@ -333,10 +397,22 @@ class ConsolidationResource extends Resource
                 Tables\Filters\SelectFilter::make('consolidator_id')
                     ->label('Consolidator')
                     ->options(function () {
-                        return \App\Models\User::query()
-                            ->where('is_primary_leader', true)
-                            ->orWhere('is_network_admin', true)
-                            ->orderBy('first_name')
+                        if (!Auth::check()) {
+                            return [];
+                        }
+                        $user = Auth::user();
+                        $query = \App\Models\User::query()
+                            ->where(function ($q) {
+                                $q->where('is_primary_leader', true)
+                                  ->orWhere('is_network_admin', true);
+                            });
+
+                        // Gender filtering (except for super admins)
+                        if (!$user->is_super_admin && $user->gender) {
+                            $query->where('gender', $user->gender);
+                        }
+
+                        return $query->orderBy('first_name')
                             ->orderBy('last_name')
                             ->get()
                             ->mapWithKeys(function ($user) {

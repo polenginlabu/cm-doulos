@@ -335,7 +335,7 @@ class UserResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        // If user is logged in, only show their network (unless they're a super admin or network admin)
+        // If user is logged in, only show their network and same gender (unless they're a super admin or network admin)
         if (Auth::check()) {
             /** @var User $user */
             $user = Auth::user();
@@ -346,6 +346,10 @@ class UserResource extends Resource
             if ($user && method_exists($user, 'getNetworkUserIds')) {
                 $networkIds = $user->getNetworkUserIds();
                 $query->whereIn('id', $networkIds);
+            }
+            // Filter by gender (same gender only)
+            if ($user && $user->gender) {
+                $query->where('gender', $user->gender);
             }
         }
 

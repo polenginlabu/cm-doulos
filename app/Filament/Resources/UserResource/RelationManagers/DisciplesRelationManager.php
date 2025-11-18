@@ -33,6 +33,12 @@ class DisciplesRelationManager extends RelationManager
                             $query->where('gender', $this->ownerRecord->gender);
                         }
 
+                        // Filter by network: only show users in the owner's network
+                        if ($this->ownerRecord && method_exists($this->ownerRecord, 'getNetworkUserIds')) {
+                            $networkIds = $this->ownerRecord->getNetworkUserIds();
+                            $query->whereIn('id', $networkIds);
+                        }
+
                         // Only show users not already in an active discipleship
                         $query->whereDoesntHave('discipleships', function ($q) {
                             $q->where('status', 'active');
@@ -55,6 +61,12 @@ class DisciplesRelationManager extends RelationManager
                         // Filter by owner's (mentor's) gender
                         if ($this->ownerRecord && $this->ownerRecord->gender) {
                             $query->where('gender', $this->ownerRecord->gender);
+                        }
+
+                        // Filter by network: only show users in the owner's network
+                        if ($this->ownerRecord && method_exists($this->ownerRecord, 'getNetworkUserIds')) {
+                            $networkIds = $this->ownerRecord->getNetworkUserIds();
+                            $query->whereIn('id', $networkIds);
                         }
 
                         // Only show users not already in an active discipleship

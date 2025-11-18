@@ -86,11 +86,21 @@ class NetworkOverviewResource extends Resource
                 Tables\Filters\SelectFilter::make('direct_leader')
                     ->label('Direct Leader')
                     ->options(function () {
-                        return \App\Models\User::query()
-                            ->whereHas('disciples', function ($query) {
-                                $query->where('status', 'active');
-                            })
-                            ->orderBy('first_name')
+                        if (!Auth::check()) {
+                            return [];
+                        }
+                        $user = Auth::user();
+                        $query = \App\Models\User::query()
+                            ->whereHas('disciples', function ($q) {
+                                $q->where('status', 'active');
+                            });
+
+                        // Gender filtering (except for super admins)
+                        if (!$user->is_super_admin && $user->gender) {
+                            $query->where('gender', $user->gender);
+                        }
+
+                        return $query->orderBy('first_name')
                             ->orderBy('last_name')
                             ->get()
                             ->mapWithKeys(function ($user) {
@@ -116,8 +126,19 @@ class NetworkOverviewResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
-        // Super admins and network admins can see all users
-        // No additional filtering needed since canAccess already handles permissions
+        // Super admins can see all users (no gender filter)
+        // Network admins can see all users but gender-specific
+        if (Auth::check()) {
+            /** @var \App\Models\User $user */
+            $user = Auth::user();
+
+            // Network admins: gender-specific filtering
+            if ($user->is_network_admin && !$user->is_super_admin && $user->gender) {
+                $query->where('gender', $user->gender);
+            }
+            // Super admins: no filtering
+        }
+
         return $query;
     }
 

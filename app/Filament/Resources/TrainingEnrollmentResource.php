@@ -25,6 +25,65 @@ class TrainingEnrollmentResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    /**
+     * Get filtered user IDs based on network and gender.
+     */
+    protected static function getFilteredUserIds(): array
+    {
+        if (!Auth::check()) {
+            return [];
+        }
+
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        // Super admins and network admins can see all users
+        if ($user->is_super_admin || $user->is_network_admin) {
+            $query = \App\Models\User::query();
+        } else {
+            // Regular users can only see their network
+            if (!method_exists($user, 'getNetworkUserIds')) {
+                return [$user->id];
+            }
+            $networkIds = $user->getNetworkUserIds();
+            $query = \App\Models\User::whereIn('id', $networkIds);
+        }
+
+        // Filter by gender (same gender only)
+        if ($user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        return $query->pluck('id')->toArray();
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        // If user is logged in, filter by network and gender unless they're a super admin or network admin
+        if (Auth::check()) {
+            /** @var \App\Models\User $user */
+            $user = Auth::user();
+
+            // Super admins and network admins can see all enrollments
+            if ($user->is_super_admin || $user->is_network_admin) {
+                return $query;
+            }
+
+            // Regular users can only see enrollments from their network
+            $filteredUserIds = static::getFilteredUserIds();
+            if (!empty($filteredUserIds)) {
+                $query->whereIn('user_id', $filteredUserIds);
+            } else {
+                // If no filtered users, show nothing
+                $query->whereRaw('1 = 0');
+            }
+        }
+
+        return $query;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -122,7 +181,11 @@ class TrainingEnrollmentResource extends Resource
                             ->label('Students')
                             ->multiple()
                             ->options(function () {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->orderBy('first_name')
                                     ->orderBy('last_name')
                                     ->limit(100)
@@ -133,7 +196,11 @@ class TrainingEnrollmentResource extends Resource
                                     ->toArray();
                             })
                             ->getSearchResultsUsing(function (string $search) {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->where(function ($q) use ($search) {
                                         $q->where('first_name', 'like', "%{$search}%")
                                           ->orWhere('last_name', 'like', "%{$search}%");
@@ -156,7 +223,11 @@ class TrainingEnrollmentResource extends Resource
                         Forms\Components\Select::make('user_id')
                             ->label('Student')
                             ->options(function () {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->orderBy('first_name')
                                     ->orderBy('last_name')
                                     ->limit(50)
@@ -167,7 +238,11 @@ class TrainingEnrollmentResource extends Resource
                                     ->toArray();
                             })
                             ->getSearchResultsUsing(function (string $search) {
-                                return \App\Models\User::query()
+                                $filteredUserIds = static::getFilteredUserIds();
+                                if (empty($filteredUserIds)) {
+                                    return [];
+                                }
+                                return \App\Models\User::whereIn('id', $filteredUserIds)
                                     ->where(function ($q) use ($search) {
                                         $q->where('first_name', 'like', "%{$search}%")
                                           ->orWhere('last_name', 'like', "%{$search}%");

@@ -172,9 +172,16 @@ class QuickAttendance extends Page implements HasForms, HasTable
         }
 
         $networkIds = $user->getNetworkUserIds();
-        return User::query()
+        $query = User::query()
             ->whereIn('id', $networkIds)
             ->with('mentor.mentor');
+
+        // Apply gender filtering (except for super admins and network admins)
+        if (!$user->is_super_admin && !$user->is_network_admin && $user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        return $query;
     }
 
     public function table(Table $table): Table
@@ -301,8 +308,14 @@ class QuickAttendance extends Page implements HasForms, HasTable
                             ->pluck('mentor_id')
                             ->toArray();
 
-                        return User::whereIn('id', $mentorIds)
-                            ->orderBy('first_name')
+                        $query = User::whereIn('id', $mentorIds);
+
+                        // Apply gender filtering (except for super admins and network admins)
+                        if (!$user->is_super_admin && !$user->is_network_admin && $user->gender) {
+                            $query->where('gender', $user->gender);
+                        }
+
+                        return $query->orderBy('first_name')
                             ->orderBy('last_name')
                             ->get()
                             ->mapWithKeys(function ($user) {
@@ -372,8 +385,14 @@ class QuickAttendance extends Page implements HasForms, HasTable
         }
 
         $networkIds = $user->getNetworkUserIds();
-        $this->networkMembers = User::whereIn('id', $networkIds)
-            ->orderBy('first_name')
+        $query = User::whereIn('id', $networkIds);
+
+        // Apply gender filtering (except for super admins and network admins)
+        if (!$user->is_super_admin && !$user->is_network_admin && $user->gender) {
+            $query->where('gender', $user->gender);
+        }
+
+        $this->networkMembers = $query->orderBy('first_name')
             ->orderBy('last_name')
             ->get()
             ->map(function ($member) {
