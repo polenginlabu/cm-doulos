@@ -6,6 +6,7 @@ use App\Filament\Resources\UserResource;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use App\Models\Discipleship;
 
 class CreateUser extends CreateRecord
@@ -14,6 +15,35 @@ class CreateUser extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        // Generate email from first_name and last_name if email is not provided
+        if (empty($data['email']) && (!empty($data['first_name']) || !empty($data['last_name']))) {
+            // Combine first_name and last_name
+            $fullName = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
+
+            if (!empty($fullName)) {
+                // Convert name to email format: "john pilip" -> "john.pilip@gmail.com"
+                $email = strtolower($fullName);
+                $email = preg_replace('/\s+/', '.', trim($email)); // Replace spaces with dots
+                $email = preg_replace('/[^a-z0-9.]/', '', $email); // Remove special characters
+                $email = $email . '@gmail.com';
+
+                // Check if email already exists, if so, append a number
+                $originalEmail = $email;
+                $counter = 1;
+                while (\App\Models\User::where('email', $email)->exists()) {
+                    $email = str_replace('@gmail.com', $counter . '@gmail.com', $originalEmail);
+                    $counter++;
+                }
+
+                $data['email'] = $email;
+            }
+        }
+
+        // Set default password if not provided
+        if (empty($data['password'])) {
+            $data['password'] = Hash::make('P@ssWord1');
+        }
+
         // Generate invitation token if email is provided
         if (isset($data['email']) && !empty($data['email'])) {
             $data['invitation_token'] = Str::random(64);

@@ -39,12 +39,13 @@ class RegistrationController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email|max:255',
             'contact' => 'nullable|string|max:255',
             'mentor_id' => 'nullable|exists:users,id',
             'network_leader_id' => 'nullable|exists:users,id',
-            'gender' => 'nullable|in:male,female,other',
+            'gender' => 'nullable|in:male,female',
         ]);
 
         if ($validator->fails()) {
@@ -55,7 +56,9 @@ class RegistrationController extends Controller
 
         // Create the user
         $user = User::create([
-            'name' => $request->name,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'name' => trim($request->first_name . ' ' . $request->last_name), // Keep for backward compatibility
             'email' => $request->email,
             'phone' => $request->contact,
             'network_leader_id' => $request->network_leader_id,

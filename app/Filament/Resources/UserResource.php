@@ -35,15 +35,19 @@ class UserResource extends Resource
             ->schema([
                 Forms\Components\Section::make('Basic Information')
                     ->schema([
-                        Forms\Components\TextInput::make('name')
+                        Forms\Components\TextInput::make('first_name')
+                            ->label('First Name')
+                            ->required()
+                            ->maxLength(255),
+                        Forms\Components\TextInput::make('last_name')
+                            ->label('Last Name')
                             ->required()
                             ->maxLength(255),
                         Forms\Components\TextInput::make('email')
                             ->email()
                             ->maxLength(255)
                             ->unique(ignoreRecord: true)
-                            ->required()
-                            ->helperText('Required for registration'),
+                            ->helperText('Optional. Auto-generated from first name and last name before saving if left blank (e.g., "john pilip" → "john.pilip@gmail.com")'),
                         Forms\Components\TextInput::make('phone')
                             ->label('Contact')
                             ->tel()
@@ -52,7 +56,6 @@ class UserResource extends Resource
                             ->options([
                                 'male' => 'Male',
                                 'female' => 'Female',
-                                'other' => 'Other',
                             ])
                             ->nullable(),
                         Forms\Components\DatePicker::make('date_of_birth'),
@@ -67,26 +70,53 @@ class UserResource extends Resource
                             ->preload(),
                         Forms\Components\Select::make('cell_leader_id')
                             ->label('Cell Leader')
-                            ->options(function () {
-                                $query = \App\Models\User::orderBy('name');
+                            ->options(function ($record) {
+                                $query = \App\Models\User::orderBy('first_name')->orderBy('last_name');
 
                                 // Filter by logged-in user's gender
                                 if (Auth::check() && Auth::user()->gender) {
                                     $query->where('gender', Auth::user()->gender);
                                 }
 
-                                return $query->pluck('name', 'id')->toArray();
+                                // Exclude logged-in user
+                                if (Auth::check()) {
+                                    $query->where('id', '!=', Auth::id());
+                                }
+
+                                // Exclude the user being edited
+                                if ($record) {
+                                    $query->where('id', '!=', $record->id);
+                                }
+
+                                return $query->get()->mapWithKeys(function ($user) {
+                                    return [$user->id => $user->name];
+                                })->toArray();
                             })
-                            ->getSearchResultsUsing(function (string $search): array {
-                                $query = \App\Models\User::where('name', 'like', "%{$search}%")
-                                    ->orderBy('name');
+                            ->getSearchResultsUsing(function (string $search, $record): array {
+                                $query = \App\Models\User::where(function ($q) use ($search) {
+                                    $q->where('first_name', 'like', "%{$search}%")
+                                      ->orWhere('last_name', 'like', "%{$search}%");
+                                })
+                                    ->orderBy('first_name')->orderBy('last_name');
 
                                 // Filter by logged-in user's gender
                                 if (Auth::check() && Auth::user()->gender) {
                                     $query->where('gender', Auth::user()->gender);
                                 }
 
-                                return $query->limit(50)->pluck('name', 'id')->toArray();
+                                // Exclude logged-in user
+                                if (Auth::check()) {
+                                    $query->where('id', '!=', Auth::id());
+                                }
+
+                                // Exclude the user being edited
+                                if ($record) {
+                                    $query->where('id', '!=', $record->id);
+                                }
+
+                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
+                                    return [$user->id => $user->name];
+                                })->toArray();
                             })
                             ->getOptionLabelUsing(fn ($value): ?string =>
                                 \App\Models\User::find($value)?->name
@@ -105,13 +135,32 @@ class UserResource extends Resource
                             }),
                         Forms\Components\Select::make('network_leader_id')
                             ->label('Network Leader')
-                            ->relationship('networkLeader', 'name')
+                            ->relationship('networkLeader', 'name', function ($query, $record) {
+                                // Exclude logged-in user
+                                if (Auth::check()) {
+                                    $query->where('id', '!=', Auth::id());
+                                }
+                                // Exclude the user being edited
+                                if ($record) {
+                                    $query->where('id', '!=', $record->id);
+                                }
+                            })
                             ->searchable()
                             ->preload()
                             ->helperText('Select the network leader for this member'),
                         Forms\Components\Select::make('primary_user_id')
                             ->label('Primary User')
-                            ->relationship('primaryUser', 'name', fn ($query) => $query->where('is_primary_leader', true))
+                            ->relationship('primaryUser', 'name', function ($query, $record) {
+                                $query->where('is_primary_leader', true);
+                                // Exclude logged-in user
+                                if (Auth::check()) {
+                                    $query->where('id', '!=', Auth::id());
+                                }
+                                // Exclude the user being edited
+                                if ($record) {
+                                    $query->where('id', '!=', $record->id);
+                                }
+                            })
                             ->searchable()
                             ->preload()
                             ->helperText('Select the primary user (primary leader) for this member'),
@@ -140,10 +189,9 @@ class UserResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('password')
                             ->password()
-                            ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                            ->dehydrateStateUsing(fn ($state) => !empty($state) ? Hash::make($state) : null)
                             ->dehydrated(fn ($state) => filled($state))
-                            ->required(fn (string $context): bool => $context === 'create')
-                            ->helperText('Leave blank to keep current password when editing'),
+                            ->helperText('Leave blank to use default password "P@ssWord1" (or keep current password when editing)'),
                         Forms\Components\Toggle::make('is_active')
                             ->label('Account Active')
                             ->default(false)
@@ -198,9 +246,19 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')
+                Tables\Columns\TextColumn::make('first_name')
+                    ->label('First Name')
                     ->searchable()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('last_name')
+                    ->label('Last Name')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('name')
+                    ->label('Full Name')
+                    ->getStateUsing(fn ($record) => trim(($record->first_name ?? '') . ' ' . ($record->last_name ?? '')))
+                    ->searchable(['first_name', 'last_name'])
+                    ->sortable(false),
                 Tables\Columns\TextColumn::make('email')
                     ->searchable()
                     ->sortable()
@@ -238,7 +296,6 @@ class UserResource extends Resource
                     ->colors([
                         'primary' => 'male',
                         'success' => 'female',
-                        'warning' => 'other',
                     ]),
                 Tables\Columns\TextColumn::make('networkLeader.name')
                     ->label('Network Leader')

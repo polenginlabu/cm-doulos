@@ -20,7 +20,9 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name',
+        'name', // Keep for backward compatibility, but prefer first_name and last_name
+        'first_name',
+        'last_name',
         'email',
         'password',
         'phone',
@@ -234,5 +236,19 @@ class User extends Authenticatable
     public function isInNetwork($userId)
     {
         return in_array($userId, $this->getNetworkUserIds());
+    }
+
+    /**
+     * Get the user's full name (for backward compatibility).
+     * Combines first_name and last_name, or falls back to name if available.
+     */
+    public function getNameAttribute()
+    {
+        if ($this->first_name || $this->last_name) {
+            return trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? ''));
+        }
+
+        // Fallback to name column if first_name and last_name are not set
+        return $this->attributes['name'] ?? '';
     }
 }
