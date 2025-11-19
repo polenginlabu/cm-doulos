@@ -6,6 +6,7 @@ use App\Filament\Resources\UserManagementResource;
 use App\Models\Discipleship;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Support\Facades\Auth;
 
 class EditUserManagement extends EditRecord
 {
@@ -43,6 +44,14 @@ class EditUserManagement extends EditRecord
         // If primary user is set, set as cell leader
         if (isset($data['primary_user_id']) && $data['primary_user_id']) {
             $data['cell_leader_id'] = $data['primary_user_id'];
+        }
+
+        // Always set gender to authenticated user's gender
+        if (Auth::check()) {
+            $authUser = Auth::user();
+            if ($authUser->gender) {
+                $data['gender'] = $authUser->gender;
+            }
         }
 
         // Store for cascading update in afterSave

@@ -4,6 +4,7 @@ namespace App\Filament\Pages\Auth;
 
 use App\Models\User;
 use App\Models\Discipleship;
+use App\Filament\Forms\Components\UserSelect;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Component;
@@ -23,8 +24,8 @@ class Register extends BaseRegister
                         $this->getEmailFormComponent(),
                         $this->getContactFormComponent(),
                         $this->getGenderFormComponent(),
-                        $this->getMentorFormComponent(),
                         $this->getNetworkLeaderFormComponent(),
+                        $this->getMentorFormComponent(),
                         $this->getPasswordFormComponent(),
                         $this->getPasswordConfirmationFormComponent(),
                     ])
@@ -66,105 +67,52 @@ class Register extends BaseRegister
                 'male' => 'Male',
                 'female' => 'Female',
             ])
-            ->nullable()
+            ->required()
             ->reactive();
     }
 
     protected function getMentorFormComponent(): Component
     {
-        return Select::make('mentor_id')
-            ->label('Cell Leader')
-            ->options(function ($get) {
-                $query = User::orderBy('first_name')->orderBy('last_name');
-
-                // Filter by selected gender (from registration form)
-                $gender = $get('gender');
-                if ($gender) {
-                    $query->where('gender', $gender);
-                }
-
-                // Exclude logged-in user if editing
-                if (Auth::check() && $this->record) {
-                    $query->where('id', '!=', $this->record->id);
-                }
-
-                return $query->get()->mapWithKeys(function ($user) {
-                    return [$user->id => $user->name];
-                })->toArray();
+        return UserSelect::cellLeader('mentor_id', [
+            'gender' => function ($get) {
+                return $get('gender');
+            },
+            'networkLeaderId' => function ($get) {
+                return $get('primary_user_id');
+            },
+            'excludeCurrentUser' => false,
+            'activeOnly' => false, // Show all users (active and inactive)
+            'allowEmptySearch' => false, // Show all users when field is opened
+            'limit' => 100,
+            // 'excludeRecord' => function ($get) {
+            //     return Auth::check() && $this->record ? $this->record->id : null;
+            // },
+        ])
+            ->reactive()
+            ->disabled(function ($get) {
+                // Disable cell leader if no network leader is selected
+                return !$get('primary_user_id');
             })
-            ->getSearchResultsUsing(function (string $search, $get): array {
-                $query = User::where('is_active', true)
-                    ->where(function ($q) use ($search) {
-                        $q->where('first_name', 'like', "%{$search}%")
-                          ->orWhere('last_name', 'like', "%{$search}%");
-                    })
-                    ->orderBy('first_name')->orderBy('last_name');
-
-                // Filter by selected gender
-                $gender = $get('gender');
-                if ($gender) {
-                    $query->where('gender', $gender);
-                }
-
-                // Exclude logged-in user if editing
-                if (Auth::check() && $this->record) {
-                    $query->where('id', '!=', $this->record->id);
-                }
-
-                return $query->limit(50)->get()->mapWithKeys(function ($user) {
-                    return [$user->id => $user->name];
-                })->toArray();
-            })
-            ->searchable()
-            ->nullable()
-            ->helperText('Select your mentor (cell leader). Only users with the same gender as you are shown. A disciple can only have one active mentor.')
-            ->reactive();
+            ->helperText('Select your mentor (cell leader). Only cell leaders from the selected network leader are shown. You must select a network leader first.');
     }
 
     protected function getNetworkLeaderFormComponent(): Component
     {
-        return Select::make('primary_user_id')
-            ->label('Network Leader')
-            ->options(function () {
-                $query = User::where('is_active', true)
-                    ->where('is_primary_leader', true)
-                    ->orderBy('first_name')->orderBy('last_name');
-
-                // Exclude logged-in user if editing
-                if (Auth::check() && $this->record) {
-                    $query->where('id', '!=', $this->record->id);
-                }
-
-                return $query->get()
-                    ->mapWithKeys(function ($user) {
-                        return [$user->id => $user->name];
-                    })
-                    ->toArray();
-            })
-            ->getSearchResultsUsing(function (string $search): array {
-                $query = User::where('is_active', true)
-                    ->where('is_primary_leader', true)
-                    ->where(function ($q) use ($search) {
-                        $q->where('first_name', 'like', "%{$search}%")
-                          ->orWhere('last_name', 'like', "%{$search}%");
-                    })
-                    ->orderBy('first_name')->orderBy('last_name');
-
-                // Exclude logged-in user if editing
-                if (Auth::check() && $this->record) {
-                    $query->where('id', '!=', $this->record->id);
-                }
-
-                return $query->limit(50)
-                    ->get()
-                    ->mapWithKeys(function ($user) {
-                        return [$user->id => $user->name];
-                    })
-                    ->toArray();
-            })
-            ->searchable()
-            ->preload()
-            ->nullable();
+        return UserSelect::make('primary_user_id', [
+                'label' => 'Network Leader',
+                'primaryLeaderOnly' => false,
+                'gender' => null, // No gender filter
+                'excludeCurrentUser' => false,
+                'activeOnly' => false, // Show all users (active and inactive)
+                'allowEmptySearch' => false, // Show all users when field is opened
+                'limit' => 100,
+            ])
+            ->required()
+            ->reactive()
+            ->afterStateUpdated(function ($state, $set) {
+                // Clear cell leader when network leader changes
+                $set('mentor_id', null);
+            });
     }
 
     protected function mutateFormDataBeforeCreate(array $data): array

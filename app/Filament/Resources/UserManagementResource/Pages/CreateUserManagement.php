@@ -8,6 +8,7 @@ use App\Models\User;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
 
 class CreateUserManagement extends CreateRecord
 {
@@ -62,6 +63,14 @@ class CreateUserManagement extends CreateRecord
         // If primary user is set, set as cell leader
         if (isset($data['primary_user_id']) && $data['primary_user_id']) {
             $data['cell_leader_id'] = $data['primary_user_id'];
+        }
+
+        // Always set gender to authenticated user's gender
+        if (Auth::check()) {
+            $authUser = Auth::user();
+            if ($authUser->gender) {
+                $data['gender'] = $authUser->gender;
+            }
         }
 
         return $data;

@@ -4,6 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SuynlEnrollmentResource\Pages;
 use App\Filament\Resources\SuynlEnrollmentResource\RelationManagers;
+use App\Filament\Forms\Components\UserSelect;
+use App\Models\Discipleship;
 use App\Models\SuynlEnrollment;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -78,18 +80,25 @@ class SuynlEnrollmentResource extends Resource
                 return $query;
             }
 
-            // Regular users (leaders) can only see enrollments where they are the leader
-            // AND the student is in their network
+            // Regular users can see enrollments where:
+            // 1. They are the leader, OR
+            // 2. The student is one of their disciples
             if ($user) {
-                $query->where('leader_id', $user->id);
+                // Get all disciple IDs (students they are mentoring)
+                $discipleIds = Discipleship::where('mentor_id', $user->id)
+                    ->where('status', 'active')
+                    ->pluck('disciple_id')
+                    ->toArray();
 
-                // Also filter by network and gender for the student
-                $filteredUserIds = static::getFilteredUserIds();
-                if (!empty($filteredUserIds)) {
-                    $query->whereIn('user_id', $filteredUserIds);
-                } else {
-                    $query->whereRaw('1 = 0');
-                }
+                // Build OR condition: leader_id = user.id OR user_id IN (disciple_ids)
+                $query->where(function ($q) use ($user, $discipleIds) {
+                    $q->where('leader_id', $user->id);
+
+                    // If user has disciples, also show enrollments where student is their disciple
+                    if (!empty($discipleIds)) {
+                        $q->orWhereIn('user_id', $discipleIds);
+                    }
+                });
             }
         }
 
@@ -143,37 +152,17 @@ class SuynlEnrollmentResource extends Resource
                             ->preload()
                             ->required()
                             ->helperText('Select the student (1st to 4th timer)'),
-                        Forms\Components\Select::make('leader_id')
-                            ->label('Leader')
-                            ->options(function () {
-                                if (!Auth::check()) {
-                                    return [];
-                                }
-
-                                /** @var \App\Models\User $user */
-                                $user = Auth::user();
-
-                                // Super admins and network admins can select any leader
-                                if ($user && ($user->is_super_admin || $user->is_network_admin)) {
-                                    return \App\Models\User::query()
-                                        ->where('is_primary_leader', true)
-                                        ->orWhere('is_network_admin', true)
-                                        ->orderBy('first_name')
-                                        ->orderBy('last_name')
-                                        ->get()
-                                        ->mapWithKeys(function ($user) {
-                                            return [$user->id => $user->name];
-                                        })
-                                        ->toArray();
-                                }
-
-                                // Regular users can only select themselves as leader
-                                return [$user->id => $user->name];
-                            })
+                        UserSelect::make('leader_id', [
+                            'label' => 'Leader',
+                            'excludePrimaryLeader' => true,
+                            'excludeCurrentUser' => false,
+                            'activeOnly' => false,
+                            'allowEmptySearch' => false,
+                            'limit' => 100,
+                        ])
                             ->default(fn () => Auth::id())
                             ->required()
-                            ->disabled(fn () => !Auth::user() || (!Auth::user()->is_super_admin && !Auth::user()->is_network_admin))
-                            ->helperText('The leader conducting the SUYNL training'),
+                            ->helperText('The leader conducting the SUYNL training. Only members from your network (excluding primary leaders) are shown.'),
                         Forms\Components\DatePicker::make('enrolled_at')
                             ->label('Enrollment Date')
                             ->default(now())

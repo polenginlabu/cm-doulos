@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
+use App\Filament\Forms\Components\UserSelect;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -21,11 +22,12 @@ class UserResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?string $navigationLabel = 'My Disciples';
+    // Rename from "My Disciples" to "My Network" in the sidebar and headings.
+    protected static ?string $navigationLabel = 'My Network';
 
-    protected static ?string $modelLabel = 'Disciple';
+    protected static ?string $modelLabel = 'Network Member';
 
-    protected static ?string $pluralModelLabel = 'My Disciples';
+    protected static ?string $pluralModelLabel = 'My Network';
 
     protected static ?int $navigationSort = 1;
 
@@ -57,7 +59,11 @@ class UserResource extends Resource
                                 'male' => 'Male',
                                 'female' => 'Female',
                             ])
-                            ->nullable(),
+                            ->required()
+                            ->disabled()
+                            ->default(function () {
+                                return Auth::check() && Auth::user()->gender ? Auth::user()->gender : null;
+                            }),
                         Forms\Components\DatePicker::make('date_of_birth'),
                     ])->columns(2),
 
@@ -76,41 +82,15 @@ class UserResource extends Resource
                                     $set('category', $record->category);
                                 }
                             }),
-                        Forms\Components\Select::make('cell_leader_id')
-                            ->label('Cell Leader')
-                            ->options(function ($record) {
-                                $query = \App\Models\User::orderBy('first_name')->orderBy('last_name');
-
-                                // Filter by logged-in user's gender
-                                if (Auth::check() && Auth::user()->gender) {
-                                    $query->where('gender', Auth::user()->gender);
-                                }
-
-                                return $query->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getSearchResultsUsing(function (string $search, $record): array {
-                                $query = \App\Models\User::where(function ($q) use ($search) {
-                                    $q->where('first_name', 'like', "%{$search}%")
-                                      ->orWhere('last_name', 'like', "%{$search}%");
-                                })
-                                    ->orderBy('first_name')->orderBy('last_name');
-
-                                // Filter by logged-in user's gender
-                                if (Auth::check() && Auth::user()->gender) {
-                                    $query->where('gender', Auth::user()->gender);
-                                }
-
-                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getOptionLabelUsing(fn ($value): ?string =>
-                                \App\Models\User::find($value)?->name
-                            )
-                            ->searchable()
-                            ->preload()
+                        UserSelect::cellLeader('cell_leader_id', [
+                            'gender' => function ($get) {
+                                return Auth::check() && Auth::user()->gender ? Auth::user()->gender : null;
+                            },
+                            'excludeCurrentUser' => false,
+                            'activeOnly' => false, // Show all users (active and inactive)
+                            'allowEmptySearch' => false, // Show all users when field is opened
+                            'limit' => 100,
+                        ])
                             ->reactive()
                             ->afterStateUpdated(function ($state, $set, $get, $livewire) {
                                 // Store cell_leader_id in Livewire property for use in afterSave
@@ -158,105 +138,24 @@ class UserResource extends Resource
                                     }
                                 }
                             }),
-                        Forms\Components\Select::make('primary_user_id')
-                            ->label('Network Leader')
-                            ->options(function ($record, $get) {
-                                // If cell leader is selected and has a network leader, use that
-                                $cellLeaderId = $get('cell_leader_id');
-                                if ($cellLeaderId) {
-                                    $cellLeader = \App\Models\User::find($cellLeaderId);
-                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
-                                        // Cell leader has a network leader, return only that option
-                                        $networkLeader = \App\Models\User::find($cellLeader->primary_user_id);
-                                        if ($networkLeader) {
-                                            return [$networkLeader->id => $networkLeader->name];
-                                        }
-                                    }
+                        Forms\Components\Hidden::make('primary_user_id')
+                            ->default(function () {
+                                // Always default to the authenticated user's network
+                                if (!Auth::check()) {
+                                    return null;
                                 }
 
-                                $query = \App\Models\User::where('is_primary_leader', true)
-                                    ->orderBy('first_name')->orderBy('last_name');
+                                $authUser = Auth::user();
 
-                                // Exclude logged-in user
-                                if (Auth::check()) {
-                                    $query->where('id', '!=', Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
+                                // If auth user is a primary leader, use their ID
+                                if ($authUser->is_primary_leader) {
+                                    return $authUser->id;
                                 }
 
-                                return $query->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
+                                // Otherwise, use their network leader (primary_user_id)
+                                return $authUser->primary_user_id;
                             })
-                            ->getSearchResultsUsing(function (string $search, $record, $get): array {
-                                // If cell leader is selected and has a network leader, use that
-                                $cellLeaderId = $get('cell_leader_id');
-                                if ($cellLeaderId) {
-                                    $cellLeader = \App\Models\User::find($cellLeaderId);
-                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
-                                        // Cell leader has a network leader, return only that option
-                                        $networkLeader = \App\Models\User::find($cellLeader->primary_user_id);
-                                        if ($networkLeader) {
-                                            return [$networkLeader->id => $networkLeader->name];
-                                        }
-                                    }
-                                }
-
-                                $query = \App\Models\User::where('is_primary_leader', true)
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('first_name', 'like', "%{$search}%")
-                                          ->orWhere('last_name', 'like', "%{$search}%");
-                                    })
-                                    ->orderBy('first_name')->orderBy('last_name');
-
-                                // Exclude logged-in user
-                                if (Auth::check()) {
-                                    $query->where('id', '!=', Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-
-                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getOptionLabelUsing(fn ($value): ?string =>
-                                \App\Models\User::find($value)?->name
-                            )
-                            ->searchable()
-                            ->preload()
-                            ->reactive()
-                            ->disabled(function ($get) {
-                                // Disable if cell leader is selected and has a network leader
-                                $cellLeaderId = $get('cell_leader_id');
-                                if ($cellLeaderId) {
-                                    $cellLeader = \App\Models\User::find($cellLeaderId);
-                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
-                                        return true; // Disable because cell leader has a network leader
-                                    }
-                                }
-                                return false;
-                            })
-                            ->afterStateUpdated(function ($state, $set) {
-                                // If network leader is set, automatically set as cell leader
-                                if ($state) {
-                                    $set('cell_leader_id', $state);
-                                }
-                            })
-                            ->helperText(function ($get) {
-                                $cellLeaderId = $get('cell_leader_id');
-                                if ($cellLeaderId) {
-                                    $cellLeader = \App\Models\User::find($cellLeaderId);
-                                    if ($cellLeader && $cellLeader->primary_user_id && !$cellLeader->is_primary_leader) {
-                                        return 'Network leader is automatically inherited from the selected cell leader.';
-                                    }
-                                }
-                                return 'Select the network leader (primary leader) for this disciple. They will automatically be set as the cell leader. All disciples will inherit this network leader.';
-                            }),
+                            ->dehydrated(),
                         Forms\Components\Select::make('attendance_status')
                             ->options([
                                 '1st' => '1st Time',
@@ -276,10 +175,6 @@ class UserResource extends Resource
                                 'C4' => 'C4 - Engaged in 1 or fewer activities',
                             ])
                             ->helperText('Category is automatically calculated based on engagement. You can manually override it here.'),
-                        Forms\Components\DatePicker::make('first_attendance_date')
-                            ->label('First Attendance Date'),
-                        Forms\Components\DatePicker::make('last_attendance_date')
-                            ->label('Last Attendance Date'),
                         Forms\Components\TextInput::make('total_attendances')
                             ->numeric()
                             ->default(0)
@@ -297,24 +192,30 @@ class UserResource extends Resource
                         Forms\Components\Toggle::make('is_active')
                             ->label('Account Active')
                             ->default(false)
-                            ->helperText('Account must be activated to login'),
+                            ->helperText('Account must be activated to login')
+                            ->visible(fn () => Auth::check() && Auth::user()->is_super_admin),
                         Forms\Components\Toggle::make('is_primary_leader')
                             ->label('Primary Leader')
                             ->default(false)
-                            ->helperText('Mark if this user is a primary leader'),
+                            ->helperText('Mark if this user is a primary leader')
+                            ->visible(fn () => Auth::check() && Auth::user()->is_super_admin),
                         Forms\Components\Toggle::make('is_super_admin')
                             ->label('Super Admin')
                             ->default(false)
-                            ->helperText('Grant super admin privileges to this user'),
+                            ->helperText('Grant super admin privileges to this user')
+                            ->visible(fn () => Auth::check() && Auth::user()->is_super_admin),
                         Forms\Components\Toggle::make('is_network_admin')
                             ->label('Network Admin')
                             ->default(false)
-                            ->helperText('Can view and manage the entire network'),
+                            ->helperText('Can view and manage the entire network')
+                            ->visible(fn () => Auth::check() && Auth::user()->is_super_admin),
                         Forms\Components\Toggle::make('is_equipping_admin')
                             ->label('Equipping Admin')
                             ->default(false)
-                            ->helperText('Equipping admin privileges (for future use)'),
-                    ])->columns(2),
+                            ->helperText('Equipping admin privileges (for future use)')
+                            ->visible(fn () => Auth::check() && Auth::user()->is_super_admin),
+                    ])->columns(2)
+                    ->visible(fn () => Auth::check() && Auth::user()->is_super_admin),
 
                 Forms\Components\Section::make('Invitation')
                     ->schema([
@@ -339,6 +240,10 @@ class UserResource extends Resource
         if (Auth::check()) {
             /** @var User $user */
             $user = Auth::user();
+
+            if ($user && $user->primary_user_id) {
+                $query->where('id', '!=', $user->primary_user_id);
+            }
             // Super admins and network admins can see all users
             if ($user && ($user->is_super_admin || $user->is_network_admin)) {
                 return $query;
@@ -347,10 +252,17 @@ class UserResource extends Resource
                 $networkIds = $user->getNetworkUserIds();
                 $query->whereIn('id', $networkIds);
             }
+
             // Filter by gender (same gender only)
             if ($user && $user->gender) {
                 $query->where('gender', $user->gender);
             }
+
+            // Exclude the authenticated user and their primary user (network leader)
+            // so they don't appear in their own "My Network" list.
+            $query->where('id', '!=', $user->id);
+
+
         }
 
         return $query;
@@ -380,10 +292,6 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('phone')
                     ->searchable()
                     ->placeholder('No phone'),
-                Tables\Columns\TextColumn::make('cellGroup.name')
-                    ->label('Cell Group')
-                    ->sortable()
-                    ->placeholder('No cell group'),
                 Tables\Columns\BadgeColumn::make('attendance_status')
                     ->colors([
                         'warning' => '1st',
@@ -401,18 +309,6 @@ class UserResource extends Resource
                         'danger' => 'C4',
                     ])
                     ->sortable(),
-                Tables\Columns\TextColumn::make('total_attendances')
-                    ->label('Total Attendances')
-                    ->sortable(),
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('Active')
-                    ->boolean(),
-                Tables\Columns\IconColumn::make('is_primary_leader')
-                    ->label('Primary Leader')
-                    ->boolean(),
-                Tables\Columns\IconColumn::make('is_super_admin')
-                    ->label('Super Admin')
-                    ->boolean(),
                 Tables\Columns\TextColumn::make('gender')
                     ->badge()
                     ->formatStateUsing(fn ($state) => $state ? ucfirst($state) : '-')
@@ -449,8 +345,6 @@ class UserResource extends Resource
                 Tables\Filters\SelectFilter::make('cell_group_id')
                     ->label('Cell Group')
                     ->relationship('cellGroup', 'name'),
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Active Status'),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),

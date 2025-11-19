@@ -10,6 +10,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Models\User;
+use App\Models\Discipleship;
 
 class DisciplesRelationManager extends RelationManager
 {
@@ -171,6 +172,41 @@ class DisciplesRelationManager extends RelationManager
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Show ALL disciples in this person's network (not just first-level),
+     * by listing every discipleship where the disciple is in the owner's
+     * network tree.
+     */
+    protected function getTableQuery(): Builder
+    {
+        $owner = $this->ownerRecord;
+
+        // Only consider ACTIVE discipleships, same as FamilyTree and other
+        // places in the app. A disciple can only have ONE active mentor.
+        $query = Discipleship::query()
+            ->where('status', 'active')
+            ->with('disciple');
+
+        if ($owner && method_exists($owner, 'getNetworkUserIds')) {
+            $networkIds = $owner->getNetworkUserIds();
+
+            // Remove the owner themself from the list.
+            $networkIds = array_filter($networkIds, fn ($id) => $id !== $owner->id);
+
+            if (! empty($networkIds)) {
+                $query->whereIn('disciple_id', $networkIds);
+            } else {
+                // If there are no disciples in the network, return an empty result.
+                $query->whereRaw('1 = 0');
+            }
+        } else {
+            // Fallback: default to an empty result if we can't get network IDs.
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
     }
 }
 

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ConsolidationResource\Pages;
+use App\Filament\Forms\Components\UserSelect;
 use App\Models\ConsolidationMember;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -87,6 +88,9 @@ class ConsolidationResource extends Resource
         if (Auth::check()) {
             /** @var \App\Models\User $user */
             $user = Auth::user();
+
+            // Exclude the current user from the consolidation table
+            $query->where('users.id', '!=', $user->id);
 
             if (!$user->is_super_admin && !$user->is_network_admin) {
                 // Regular users: Filter to show only users in their network
@@ -183,34 +187,14 @@ class ConsolidationResource extends Resource
                     ])->columns(2),
                 Forms\Components\Section::make('Consolidation Details')
                     ->schema([
-                        Forms\Components\Select::make('consolidator_id')
-                            ->label('Consolidator')
-                            ->options(function () {
-                                if (!Auth::check()) {
-                                    return [];
-                                }
-                                $user = Auth::user();
-                                $query = \App\Models\User::query()
-                                    ->where(function ($q) {
-                                        $q->where('is_primary_leader', true)
-                                          ->orWhere('is_network_admin', true);
-                                    });
-
-                                // Gender filtering (except for super admins)
-                                if (!$user->is_super_admin && $user->gender) {
-                                    $query->where('gender', $user->gender);
-                                }
-
-                                return $query->orderBy('first_name')
-                                    ->orderBy('last_name')
-                                    ->get()
-                                    ->mapWithKeys(function ($user) {
-                                        return [$user->id => $user->name];
-                                    })
-                                    ->toArray();
-                            })
-                            ->searchable()
-                            ->preload()
+                        UserSelect::make('consolidator_id', [
+                            'label' => 'Consolidator',
+                            // Use the same network + gender filtering as other user selects.
+                            'excludeCurrentUser' => false,
+                            'activeOnly' => false,
+                            'allowEmptySearch' => false,
+                            'limit' => 100,
+                        ])
                             ->required()
                             ->helperText('The person responsible for consolidating this member'),
                         Forms\Components\Select::make('status')
@@ -263,26 +247,16 @@ class ConsolidationResource extends Resource
     {
         return $table
             ->recordUrl(function ($record) {
-                // Get the consolidation_id or user_id
-                $consolidationId = is_object($record)
-                    ? ($record->consolidation_id ?? null)
-                    : ($record['consolidation_id'] ?? null);
+                // Make the whole row clickable, using the SAME logic as the Edit action.
+                // The EditConsolidation page expects the `record` parameter to be the USER ID,
+                // not the consolidation_members.id. It will create the consolidation record if needed.
+                $id = is_object($record) ? ($record->id ?? null) : ($record['id'] ?? null);
 
-                $userId = is_object($record)
-                    ? ($record->id ?? null)
-                    : ($record['id'] ?? null);
-
-                // If there's a consolidation_id, use it for editing
-                if ($consolidationId) {
-                    return static::getUrl('edit', ['record' => $consolidationId]);
+                if ($id && !str_starts_with((string) $id, 'user_') && $id !== '0' && $id !== 0) {
+                    return static::getUrl('edit', ['record' => $id]);
                 }
 
-                // If no consolidation_id but we have a user_id, use user_id
-                // The EditConsolidation page will create a consolidation_member if needed
-                if ($userId) {
-                    return static::getUrl('edit', ['record' => $userId]);
-                }
-
+                // If we don't have a valid numeric ID, don't make the row clickable.
                 return null;
             })
             ->columns([

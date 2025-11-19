@@ -14,6 +14,10 @@ class CreateUser extends CreateRecord
 {
     protected static string $resource = UserResource::class;
 
+    // Override default heading (e.g. "Create Network Member") with a more
+    // discipleship‑oriented label.
+    protected static ?string $title = 'Create New Disciple';
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         // Generate email from first_name and last_name if email is not provided
@@ -56,6 +60,25 @@ class CreateUser extends CreateRecord
             $data['invited_by'] = Auth::id();
         }
 
+        // Always set primary_user_id to authenticated user's network
+        if (Auth::check()) {
+            $authUser = Auth::user();
+            
+            // If auth user is a primary leader, use their ID
+            if ($authUser->is_primary_leader) {
+                $data['primary_user_id'] = $authUser->id;
+            }
+            // Otherwise, use their network leader (primary_user_id)
+            elseif ($authUser->primary_user_id) {
+                $data['primary_user_id'] = $authUser->primary_user_id;
+            }
+            
+            // Always set gender to authenticated user's gender
+            if ($authUser->gender) {
+                $data['gender'] = $authUser->gender;
+            }
+        }
+        
         // Auto-link cell leader and primary user
         // If cell leader is a primary leader, set as primary user
         if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
@@ -65,15 +88,11 @@ class CreateUser extends CreateRecord
                 if ($cellLeader->is_primary_leader) {
                     $data['primary_user_id'] = $data['cell_leader_id'];
                 }
-                // Otherwise, inherit primary_user_id from cell leader
-                elseif ($cellLeader->primary_user_id) {
-                    $data['primary_user_id'] = $cellLeader->primary_user_id;
+                // Otherwise, inherit primary_user_id from cell leader (but only if it matches auth user's network)
+                elseif ($cellLeader->primary_user_id && isset($data['primary_user_id']) && $cellLeader->primary_user_id == $data['primary_user_id']) {
+                    // Keep the auth user's network
                 }
             }
-        }
-        // If primary user is set, set as cell leader
-        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
-            $data['cell_leader_id'] = $data['primary_user_id'];
         }
 
         return $data;

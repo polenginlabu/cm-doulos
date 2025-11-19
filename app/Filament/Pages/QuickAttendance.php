@@ -16,7 +16,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
-use Filament\Tables\Columns\ToggleColumn;
+use Filament\Tables\Columns\CheckboxColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Notifications\Notification;
@@ -189,65 +189,8 @@ class QuickAttendance extends Page implements HasForms, HasTable
         return $table
             ->query($this->getTableQuery())
             ->columns([
-                TextColumn::make('name')
-                    ->label('Member')
-                    ->searchable()
-                    ->sortable()
-                    ->formatStateUsing(function ($record) {
-                        $initials = collect(explode(' ', $record->name))
-                            ->map(fn($n) => strtoupper(substr($n, 0, 1)))
-                            ->take(2)
-                            ->implode('');
-
-                        $html = '<div class="flex items-center gap-3">';
-                        $html .= '<div class="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">' . e($initials) . '</div>';
-                        $html .= '<div>';
-                        $html .= '<p class="text-sm font-medium text-gray-900 dark:text-white">' . e($record->name) . '</p>';
-                        if ($record->email) {
-                            $html .= '<p class="text-xs text-gray-500 dark:text-gray-400">' . e($record->email) . '</p>';
-                        }
-                        $html .= '</div>';
-                        $html .= '</div>';
-                        return $html;
-                    })
-                    ->html(),
-                TextColumn::make('attendance_status')
-                    ->label('Status')
-                    ->badge()
-                    ->colors([
-                        'warning' => '1st',
-                        'info' => '2nd',
-                        'success' => '3rd',
-                        'primary' => '4th',
-                        'gray' => 'regular',
-                    ])
-                    ->formatStateUsing(fn ($state) => ucfirst($state)),
-                TextColumn::make('direct_leader')
-                    ->label('Direct Leader')
-                    ->getStateUsing(function ($record) {
-                        // Use the mentor relationship from User model
-                        $discipleship = $record->mentor;
-
-                        if ($discipleship && $discipleship->mentor) {
-                            return $discipleship->mentor->name;
-                        }
-
-                        // Fallback: query directly
-                        $discipleship = Discipleship::where('disciple_id', $record->id)
-                            ->where('status', 'active')
-                            ->with('mentor')
-                            ->first();
-
-                        if ($discipleship && $discipleship->mentor) {
-                            return $discipleship->mentor->name;
-                        }
-
-                        return null;
-                    })
-                    ->placeholder('No leader')
-                    ->sortable(false),
-                ToggleColumn::make('attendance_present')
-                    ->label('Mark Attendance')
+                CheckboxColumn::make('attendance_present')
+                    ->label('')
                     ->getStateUsing(function ($record) {
                         $selectedDate = $this->selectedDate ?? null;
                         $attendanceType = $this->selectedAttendanceType ?? 'sunday_service';
@@ -263,14 +206,92 @@ class QuickAttendance extends Page implements HasForms, HasTable
                             ->exists();
                     })
                     ->updateStateUsing(function ($record, $state) {
-                        // Prevent automatic save, handle it manually
                         $attendanceType = $this->selectedAttendanceType ?? 'sunday_service';
                         $this->toggleAttendance($record->id, $attendanceType);
-                        // Return the new state so the toggle updates visually
-                        return !$state;
+                        return $state;
                     })
-                    ->disabled(fn () => empty($this->selectedDate)),
+                    ->disabled(fn () => empty($this->selectedDate))
+                    ->extraAttributes(fn ($record) => [
+                        'class' => 'cursor-pointer',
+                    ]),
+                TextColumn::make('name')
+                    ->label('Member')
+                    ->searchable()
+                    ->sortable()
+                    ->formatStateUsing(function ($record) {
+                        $initials = collect(explode(' ', $record->name))
+                            ->map(fn($n) => strtoupper(substr($n, 0, 1)))
+                            ->take(2)
+                            ->implode('');
+
+                        // Get direct leader
+                        $directLeader = null;
+                        $discipleship = $record->mentor;
+                        if ($discipleship && $discipleship->mentor) {
+                            $directLeader = $discipleship->mentor->name;
+                        } else {
+                            // Fallback: query directly
+                            $discipleship = Discipleship::where('disciple_id', $record->id)
+                                ->where('status', 'active')
+                                ->with('mentor')
+                                ->first();
+                            if ($discipleship && $discipleship->mentor) {
+                                $directLeader = $discipleship->mentor->name;
+                            }
+                        }
+
+                        $html = '<div class="flex items-center gap-3" data-record-id="' . e($record->id) . '">';
+                        $html .= '<div class="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">' . e($initials) . '</div>';
+                        $html .= '<div class="flex-1 min-w-0">';
+                        $html .= '<p class="text-sm font-medium text-gray-900 dark:text-white truncate">' . e($record->name) . '</p>';
+                        if ($directLeader) {
+                            $html .= '<p class="text-xs text-gray-500 dark:text-gray-400 truncate">' . e($directLeader) . '</p>';
+                        } else {
+                            $html .= '<p class="text-xs text-gray-400 dark:text-gray-500 italic">No leader</p>';
+                        }
+                        $html .= '</div>';
+                        $html .= '</div>';
+                        return $html;
+                    })
+                    ->html()
+                    ->extraAttributes(function ($record) {
+                        return [
+                            'data-record-id' => $record->id,
+                        ];
+                    }),
+                TextColumn::make('attendance_status')
+                    ->label('Status')
+                    ->badge()
+                    ->colors([
+                        'warning' => '1st',
+                        'info' => '2nd',
+                        'success' => '3rd',
+                        'primary' => '4th',
+                        'gray' => 'regular',
+                    ])
+                    ->formatStateUsing(fn ($state) => ucfirst($state)),
             ])
+            ->recordClasses(function ($record) {
+                // Add green background for selected rows
+                $selectedDate = $this->selectedDate ?? null;
+                $attendanceType = $this->selectedAttendanceType ?? 'sunday_service';
+
+                if (empty($selectedDate)) {
+                    return '';
+                }
+
+                $date = Carbon::parse($selectedDate);
+                $isPresent = Attendance::where('user_id', $record->id)
+                    ->whereDate('attendance_date', $date->format('Y-m-d'))
+                    ->where('attendance_type', $attendanceType)
+                    ->exists();
+
+                if ($isPresent) {
+                    return 'bg-green-50 dark:bg-green-900/20';
+                }
+
+                return '';
+            })
             ->filters([
                 SelectFilter::make('attendance_status')
                     ->label('Attendance Status')
@@ -457,6 +478,7 @@ class QuickAttendance extends Page implements HasForms, HasTable
             ->where('attendance_type', $serviceType)
             ->first();
 
+        $isAdding = false;
         if ($existingAttendance) {
             // Remove attendance
             $existingAttendance->delete();
@@ -468,11 +490,12 @@ class QuickAttendance extends Page implements HasForms, HasTable
                 'attendance_type' => $serviceType,
                 'is_present' => true,
             ]);
+            $isAdding = true;
         }
 
         // Update user stats (only for sunday_service)
         if ($serviceType === 'sunday_service') {
-            $this->updateUserStats($userId);
+            $this->updateUserStats($userId, $isAdding);
         }
 
         $this->calculateSummary();
@@ -513,7 +536,7 @@ class QuickAttendance extends Page implements HasForms, HasTable
                 ]);
 
                 if ($serviceType === 'sunday_service') {
-                    $this->updateUserStats($userId);
+                    $this->updateUserStats($userId, true); // Adding attendance
                 }
             }
         }
@@ -545,7 +568,7 @@ class QuickAttendance extends Page implements HasForms, HasTable
 
         foreach ($userIds as $userId) {
             if ($serviceType === 'sunday_service') {
-                $this->updateUserStats($userId);
+                $this->updateUserStats($userId, false); // Removing attendance
             }
         }
 
@@ -559,12 +582,19 @@ class QuickAttendance extends Page implements HasForms, HasTable
             ->send();
     }
 
-    protected function updateUserStats($userId): void
+    protected function updateUserStats($userId, $isAdding = true): void
     {
+        // Refresh user from database to get latest data
         $user = User::find($userId);
         if (!$user) {
             return;
         }
+
+        // Get the attendance count BEFORE the current operation
+        $previousCount = $user->total_attendances ?? 0;
+
+        // Refresh to ensure we have the latest attendance count
+        $user->refresh();
 
         // Count only Sunday Service attendances for status tracking
         $sundayAttendances = $user->attendances()
@@ -573,37 +603,55 @@ class QuickAttendance extends Page implements HasForms, HasTable
 
         $user->total_attendances = $sundayAttendances;
 
-        // Update attendance status based on Sunday Service only
+        // Define status hierarchy for incrementing/decrementing
+        $statusHierarchy = ['1st' => 1, '2nd' => 2, '3rd' => 3, '4th' => 4, 'regular' => 5];
+        $currentStatus = $user->attendance_status ?? '1st';
+        $currentStatusLevel = $statusHierarchy[$currentStatus] ?? 1;
+
+        // Calculate what the status should be based on attendance count (minimum status)
+        $calculatedStatus = '1st';
         if ($sundayAttendances >= 4) {
-            $user->attendance_status = 'regular';
+            $calculatedStatus = 'regular';
         } elseif ($sundayAttendances == 3) {
-            $user->attendance_status = '4th';
+            $calculatedStatus = '4th';
         } elseif ($sundayAttendances == 2) {
-            $user->attendance_status = '3rd';
+            $calculatedStatus = '3rd';
         } elseif ($sundayAttendances == 1) {
-            $user->attendance_status = '2nd';
-        } else {
-            $user->attendance_status = '1st';
+            $calculatedStatus = '2nd';
         }
+        $calculatedStatusLevel = $statusHierarchy[$calculatedStatus] ?? 1;
 
-        // Update dates
-        $firstAttendance = $user->attendances()
-            ->where('attendance_type', 'sunday_service')
-            ->orderBy('attendance_date')
-            ->first();
-
-        if ($firstAttendance) {
-            $user->first_attendance_date = $firstAttendance->attendance_date;
+        // If status is already "regular", don't change it (no increment or decrement)
+        if ($currentStatusLevel < 5) {
+            // Only update status if not already "regular"
+            if ($isAdding) {
+                // When adding attendance: only increment if count actually increased
+                if ($sundayAttendances > $previousCount) {
+                    // Increment status by one level (1st -> 2nd -> 3rd -> 4th -> regular)
+                    $newStatusLevel = $currentStatusLevel + 1;
+                    $newStatus = array_search($newStatusLevel, $statusHierarchy);
+                    if ($newStatus) {
+                        $user->attendance_status = $newStatus;
+                    }
+                }
+            } else {
+                // When removing attendance: decrement status by one level
+                if ($currentStatusLevel > 1) {
+                    $newStatusLevel = $currentStatusLevel - 1;
+                    $newStatus = array_search($newStatusLevel, $statusHierarchy);
+                    if ($newStatus) {
+                        // But don't go below what the attendance count suggests
+                        if ($newStatusLevel >= $calculatedStatusLevel) {
+                            $user->attendance_status = $newStatus;
+                        } else {
+                            // Set to calculated status if decrementing would go too low
+                            $user->attendance_status = $calculatedStatus;
+                        }
+                    }
+                }
+            }
         }
-
-        $lastAttendance = $user->attendances()
-            ->where('attendance_type', 'sunday_service')
-            ->orderBy('attendance_date', 'desc')
-            ->first();
-
-        if ($lastAttendance) {
-            $user->last_attendance_date = $lastAttendance->attendance_date;
-        }
+        // If status is "regular", skip status updates
 
         $user->save();
     }

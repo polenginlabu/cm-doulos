@@ -7,10 +7,14 @@ use App\Models\Discipleship;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class EditUser extends EditRecord
 {
     protected static string $resource = UserResource::class;
+
+    // Custom heading for edit page instead of the default "Edit Network Member".
+    protected static ?string $title = 'Edit Disciple';
 
     protected ?int $newPrimaryUserId = null;
     public ?int $cellLeaderId = null;
@@ -53,25 +57,39 @@ class EditUser extends EditRecord
         // Store cell_leader_id for use in afterSave
         $this->cellLeaderId = $cellLeaderId;
 
+        // Always set primary_user_id to authenticated user's network
+        if (Auth::check()) {
+            $authUser = Auth::user();
+            
+            // If auth user is a primary leader, use their ID
+            if ($authUser->is_primary_leader) {
+                $data['primary_user_id'] = $authUser->id;
+            }
+            // Otherwise, use their network leader (primary_user_id)
+            elseif ($authUser->primary_user_id) {
+                $data['primary_user_id'] = $authUser->primary_user_id;
+            }
+            
+            // Always set gender to authenticated user's gender
+            if ($authUser->gender) {
+                $data['gender'] = $authUser->gender;
+            }
+        }
+
         // Auto-link cell leader and network leader
-        // If cell leader is a primary leader, set as network leader
+        // If cell leader is a primary leader, set as network leader (but only if in same network)
         if ($cellLeaderId) {
             $cellLeader = \App\Models\User::find($cellLeaderId);
             if ($cellLeader) {
-                // If cell leader is a primary leader, set as network leader
-                if ($cellLeader->is_primary_leader) {
-                    $data['primary_user_id'] = $cellLeaderId;
+                // If cell leader is a primary leader and matches auth user's network, set as network leader
+                if ($cellLeader->is_primary_leader && isset($data['primary_user_id']) && $cellLeader->id == $data['primary_user_id']) {
+                    // Already set correctly
                 }
-                // Otherwise, inherit primary_user_id from cell leader
-                elseif ($cellLeader->primary_user_id) {
-                    $data['primary_user_id'] = $cellLeader->primary_user_id;
+                // Otherwise, inherit primary_user_id from cell leader (but only if it matches auth user's network)
+                elseif ($cellLeader->primary_user_id && isset($data['primary_user_id']) && $cellLeader->primary_user_id == $data['primary_user_id']) {
+                    // Keep the auth user's network
                 }
             }
-        }
-        // If network leader is set and no cell leader, set network leader as cell leader
-        if (isset($data['primary_user_id']) && $data['primary_user_id'] && !$cellLeaderId) {
-            $cellLeaderId = $data['primary_user_id'];
-            $this->cellLeaderId = $cellLeaderId;
         }
 
         // Store for cascading update in afterSave

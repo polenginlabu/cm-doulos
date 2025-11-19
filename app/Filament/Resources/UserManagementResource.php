@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserManagementResource\Pages;
+use App\Filament\Forms\Components\UserSelect;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -63,7 +64,11 @@ class UserManagementResource extends Resource
                                 'male' => 'Male',
                                 'female' => 'Female',
                             ])
-                            ->nullable(),
+                            ->required()
+                            ->disabled()
+                            ->default(function () {
+                                return Auth::check() && Auth::user()->gender ? Auth::user()->gender : null;
+                            }),
                         Forms\Components\DatePicker::make('date_of_birth'),
                     ])->columns(2),
 
@@ -74,61 +79,15 @@ class UserManagementResource extends Resource
                             ->relationship('cellGroup', 'name')
                             ->searchable()
                             ->preload(),
-                        Forms\Components\Select::make('cell_leader_id')
-                            ->label('Cell Leader')
-                            ->options(function ($record) {
-                                $query = \App\Models\User::orderBy('first_name')->orderBy('last_name');
-
-                                // Filter by logged-in user's gender
-                                if (\Illuminate\Support\Facades\Auth::check() && \Illuminate\Support\Facades\Auth::user()->gender) {
-                                    $query->where('gender', \Illuminate\Support\Facades\Auth::user()->gender);
-                                }
-
-                                // Exclude logged-in user
-                                if (\Illuminate\Support\Facades\Auth::check()) {
-                                    $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
-                                }
-
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-
-                                return $query->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getSearchResultsUsing(function (string $search, $record): array {
-                                $query = \App\Models\User::where(function ($q) use ($search) {
-                                    $q->where('first_name', 'like', "%{$search}%")
-                                      ->orWhere('last_name', 'like', "%{$search}%");
-                                })
-                                    ->orderBy('first_name')->orderBy('last_name');
-
-                                // Filter by logged-in user's gender
-                                if (\Illuminate\Support\Facades\Auth::check() && \Illuminate\Support\Facades\Auth::user()->gender) {
-                                    $query->where('gender', \Illuminate\Support\Facades\Auth::user()->gender);
-                                }
-
-                                // Exclude logged-in user
-                                if (\Illuminate\Support\Facades\Auth::check()) {
-                                    $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
-                                }
-
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-
-                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getOptionLabelUsing(fn ($value): ?string =>
-                                \App\Models\User::find($value)?->name
-                            )
-                            ->searchable()
-                            ->preload()
+                        UserSelect::cellLeader('cell_leader_id', [
+                            'gender' => function ($get) {
+                                return Auth::check() && Auth::user()->gender ? Auth::user()->gender : null;
+                            },
+                            'excludeCurrentUser' => false,
+                            'activeOnly' => false, // Show all users (active and inactive)
+                            'allowEmptySearch' => false, // Show all users when field is opened
+                            'limit' => 100,
+                        ])
                             ->reactive()
                             ->afterStateUpdated(function ($state, $set, $get) {
                                 // If cell leader is a primary leader, automatically set as primary user
@@ -149,51 +108,12 @@ class UserManagementResource extends Resource
                                     }
                                 }
                             }),
-                        Forms\Components\Select::make('primary_user_id')
-                            ->label('Primary User')
-                            ->options(function ($record) {
-                                $query = \App\Models\User::where('is_primary_leader', true)
-                                    ->orderBy('first_name')->orderBy('last_name');
-
-                                // Exclude logged-in user
-                                if (\Illuminate\Support\Facades\Auth::check()) {
-                                    $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-
-                                return $query->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getSearchResultsUsing(function (string $search, $record): array {
-                                $query = \App\Models\User::where('is_primary_leader', true)
-                                    ->where(function ($q) use ($search) {
-                                        $q->where('first_name', 'like', "%{$search}%")
-                                          ->orWhere('last_name', 'like', "%{$search}%");
-                                    })
-                                    ->orderBy('first_name')->orderBy('last_name');
-
-                                // Exclude logged-in user
-                                if (\Illuminate\Support\Facades\Auth::check()) {
-                                    $query->where('id', '!=', \Illuminate\Support\Facades\Auth::id());
-                                }
-                                // Exclude the user being edited
-                                if ($record) {
-                                    $query->where('id', '!=', $record->id);
-                                }
-
-                                return $query->limit(50)->get()->mapWithKeys(function ($user) {
-                                    return [$user->id => $user->name];
-                                })->toArray();
-                            })
-                            ->getOptionLabelUsing(fn ($value): ?string =>
-                                \App\Models\User::find($value)?->name
-                            )
-                            ->searchable()
-                            ->preload()
+                        UserSelect::networkLeader('primary_user_id', [
+                            'excludeCurrentUser' => false,
+                            'activeOnly' => false, // Show all users (active and inactive)
+                            'allowEmptySearch' => false, // Show all users when field is opened
+                            'limit' => 100,
+                        ])
                             ->reactive()
                             ->afterStateUpdated(function ($state, $set) {
                                 // If primary user is set, automatically set as cell leader
