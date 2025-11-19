@@ -43,15 +43,15 @@ class ConsolidationResource extends Resource
         // Super admins can see all users
         if ($user->is_super_admin) {
             $query = \App\Models\User::query();
-        } elseif ($user->is_network_admin) {
-            // Network admins can see all users (no network restriction)
-            $query = \App\Models\User::query();
         } else {
-            // Regular users can only see their network
+            // All non-super-admin users (including network admins)
+            // can only see users in their own network.
             if (!method_exists($user, 'getNetworkUserIds')) {
-                return [$user->id];
+                $networkIds = [$user->id];
+            } else {
+                $networkIds = $user->getNetworkUserIds();
             }
-            $networkIds = $user->getNetworkUserIds();
+
             $query = \App\Models\User::whereIn('id', $networkIds);
         }
 
@@ -92,15 +92,12 @@ class ConsolidationResource extends Resource
             // Exclude the current user from the consolidation table
             $query->where('users.id', '!=', $user->id);
 
-            if (!$user->is_super_admin && !$user->is_network_admin) {
-                // Regular users: Filter to show only users in their network
-                if (method_exists($user, 'getNetworkUserIds')) {
-                    $networkIds = $user->getNetworkUserIds();
-                    $query->whereIn('users.id', $networkIds);
-                }
+            // For all non-super-admins (including network admins),
+            // limit to their own network using getNetworkUserIds.
+            if (!$user->is_super_admin && method_exists($user, 'getNetworkUserIds')) {
+                $networkIds = $user->getNetworkUserIds();
+                $query->whereIn('users.id', $networkIds);
             }
-            // Network admins: Can see all network members but still gender-specific
-            // Super admins: Can see everything (no gender filter)
 
             // Apply gender filtering for all non-super-admin users
             if (!$user->is_super_admin && $user->gender) {
