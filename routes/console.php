@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\SendConsolidatorDailyReminders;
+use App\Jobs\SendSuynlLeaderReminders;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -14,6 +15,10 @@ Schedule::call(function () {
     // Dispatch the job onto the "mail" queue
     SendConsolidatorDailyReminders::dispatch()->onQueue('mail');
 })
-    // Use everyMinute() while testing, then switch to dailyAt('8:00') for production
-    ->hourly();
+    ->dailyAt('8:00');
+
+// Schedule SUYNL leader reminders (grouped per leader with next lesson per student)
+Schedule::call(function () {
+    SendSuynlLeaderReminders::dispatch()->onQueue('mail');
+})->everyMinute();
 
