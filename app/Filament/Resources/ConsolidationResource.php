@@ -40,23 +40,18 @@ class ConsolidationResource extends Resource
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
-        // Super admins can see all users
-        if ($user->is_super_admin) {
-            $query = \App\Models\User::query();
+        // All users (including super admins and network admins)
+        // are restricted to their own network / discipleship tree.
+        if (!method_exists($user, 'getNetworkUserIds')) {
+            $networkIds = [$user->id];
         } else {
-            // All non-super-admin users (including network admins)
-            // can only see users in their own network.
-            if (!method_exists($user, 'getNetworkUserIds')) {
-                $networkIds = [$user->id];
-            } else {
-                $networkIds = $user->getNetworkUserIds();
-            }
-
-            $query = \App\Models\User::whereIn('id', $networkIds);
+            $networkIds = $user->getNetworkUserIds();
         }
 
-        // Filter by gender (same gender only) - except for super admins
-        if (!$user->is_super_admin && $user->gender) {
+        $query = \App\Models\User::whereIn('id', $networkIds);
+
+        // Filter by gender (same gender only) if the user has a gender set
+        if ($user->gender) {
             $query->where('gender', $user->gender);
         }
 
@@ -92,15 +87,14 @@ class ConsolidationResource extends Resource
             // Exclude the current user from the consolidation table
             $query->where('users.id', '!=', $user->id);
 
-            // For all non-super-admins (including network admins),
-            // limit to their own network using getNetworkUserIds.
-            if (!$user->is_super_admin && method_exists($user, 'getNetworkUserIds')) {
+            // Limit to the current user's network / discipleship tree
+            if (method_exists($user, 'getNetworkUserIds')) {
                 $networkIds = $user->getNetworkUserIds();
                 $query->whereIn('users.id', $networkIds);
             }
 
-            // Apply gender filtering for all non-super-admin users
-            if (!$user->is_super_admin && $user->gender) {
+            // Apply gender filtering if the user has a gender set
+            if ($user->gender) {
                 $query->where('users.gender', $user->gender);
             }
         }
