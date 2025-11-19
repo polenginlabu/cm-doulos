@@ -15,5 +15,5 @@ Schedule::call(function () {
     SendConsolidatorDailyReminders::dispatch()->onQueue('mail');
 })
     // Use everyMinute() while testing, then switch to dailyAt('8:00') for production
-    ->everyMinute();
+    ->hourly();
 
