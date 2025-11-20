@@ -265,9 +265,7 @@ class UserResource extends Resource
                 $query->where('id', '!=', $user->primary_user_id);
             }
             // Super admins and network admins can see all users
-            if ($user && ($user->is_super_admin || $user->is_network_admin)) {
-                return $query;
-            }
+
             if ($user && method_exists($user, 'getNetworkUserIds')) {
                 $networkIds = $user->getNetworkUserIds();
                 $query->whereIn('id', $networkIds);
@@ -281,6 +279,10 @@ class UserResource extends Resource
             // Exclude the authenticated user and their primary user (network leader)
             // so they don't appear in their own "My Network" list.
             $query->where('id', '!=', $user->id);
+
+            if ($user && ($user->is_super_admin || $user->is_network_admin)) {
+                return $query;
+            }
 
 
         }
