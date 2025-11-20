@@ -33,6 +33,7 @@ class User extends Authenticatable
         'cell_group_id',
         'primary_user_id',
         'gender',
+        'ministry_flag',
         'is_primary_leader',
         'is_super_admin',
         'is_network_admin',

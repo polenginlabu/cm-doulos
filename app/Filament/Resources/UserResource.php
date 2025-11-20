@@ -74,6 +74,16 @@ class UserResource extends Resource
                             ->default(function () {
                                 return Auth::check() && Auth::user()->gender ? Auth::user()->gender : null;
                             }),
+                        Forms\Components\Select::make('ministry_flag')
+                            ->label('Focus Group')
+                            ->options([
+                                'youth' => 'Youth',
+                                'professional' => 'Professional',
+                                'j12' => 'J12',
+                                'couples' => 'Couples',
+                            ])
+                            ->native(false)
+                            ->nullable(),
                         Forms\Components\DatePicker::make('date_of_birth'),
                     ])->columns(2),
 
@@ -325,6 +335,23 @@ class UserResource extends Resource
                     ->colors([
                         'primary' => 'male',
                         'success' => 'female',
+                    ]),
+                Tables\Columns\BadgeColumn::make('ministry_flag')
+                    ->label('Focus Group')
+                    ->formatStateUsing(function (?string $state) {
+                        return match ($state) {
+                            'youth' => 'Youth',
+                            'professional' => 'Professional',
+                            'j12' => 'J12',
+                            'couples' => 'Couples',
+                            default => null,
+                        };
+                    })
+                    ->colors([
+                        'primary' => 'youth',
+                        'info' => 'professional',
+                        'warning' => 'j12',
+                        'success' => 'couples',
                     ]),
                 Tables\Columns\TextColumn::make('primaryUser.name')
                     ->label('Network Leader')
