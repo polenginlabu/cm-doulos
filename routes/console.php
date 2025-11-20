@@ -15,10 +15,10 @@ Schedule::call(function () {
     // Dispatch the job onto the "mail" queue
     SendConsolidatorDailyReminders::dispatch()->onQueue('mail');
 })
-    ->dailyAt('8:00');
+->dailyAt('13:00');
 
 // Schedule SUYNL leader reminders (grouped per leader with next lesson per student)
 Schedule::call(function () {
     SendSuynlLeaderReminders::dispatch()->onQueue('mail');
-})->everyMinute();
+})->dailyAt('13:00');
 
