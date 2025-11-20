@@ -55,12 +55,22 @@ class UserResource extends Resource
                             ->tel()
                             ->maxLength(255),
                         Forms\Components\Select::make('gender')
-                            ->options([
-                                'male' => 'Male',
-                                'female' => 'Female',
-                            ])
+                            ->options(function () {
+                                $authUser = Auth::user();
+
+                                if ($authUser && $authUser->gender) {
+                                    $label = ucfirst($authUser->gender);
+                                    return [
+                                        $authUser->gender => $label,
+                                    ];
+                                }
+
+                                return [
+                                    'male' => 'Male',
+                                    'female' => 'Female',
+                                ];
+                            })
                             ->required()
-                            ->disabled()
                             ->default(function () {
                                 return Auth::check() && Auth::user()->gender ? Auth::user()->gender : null;
                             }),
