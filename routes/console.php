@@ -20,5 +20,5 @@ Schedule::call(function () {
 // Schedule SUYNL leader reminders (grouped per leader with next lesson per student)
 Schedule::call(function () {
     SendSuynlLeaderReminders::dispatch()->onQueue('mail');
-})->dailyAt('8:00');
+})->everyMinute();
 
