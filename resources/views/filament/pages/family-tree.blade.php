@@ -31,243 +31,353 @@
                 </p>
             </div>
 
-            <div id="tree-container" class="overflow-x-auto overflow-y-hidden w-full" style="min-height: 500px;">
-                <div class="tree-wrapper inline-block">
-                    @if(!empty($this->networkData))
-                        <ul class="tree">
-                            @include('filament.pages.partials.tree-node', ['node' => $this->networkData, 'isRoot' => true])
-                        </ul>
-                    @else
-                        <div class="text-center py-12">
-                            <p class="text-gray-500 dark:text-gray-400">No network data available. Start by creating disciples!</p>
-                        </div>
-                    @endif
-                </div>
+            <div id="tree-container" class="w-full overflow-x-auto">
+                <div
+                    id="orgchart"
+                    class="min-h-[600px] w-full"
+                    role="presentation"
+                ></div>
+            </div>
+
+            <div
+                id="tree-empty-state"
+                class="{{ empty($this->networkData) ? 'block' : 'hidden' }} text-center py-12"
+            >
+                <p class="text-gray-500 dark:text-gray-400">
+                    No network data available. Start by creating disciples!
+                </p>
             </div>
         </div>
     </div>
 
     @push('styles')
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/orgchart/3.8.0/css/jquery.orgchart.min.css"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"
+    />
     <style>
-        /* --- Org-chart style connectors (matching sample layout) --- */
-        .tree,
-        .tree ul {
-            padding-top: 1.5rem;
-            position: relative;
-            list-style: none;
-            margin: 0;
+        #tree-container {
+            min-height: 500px;
         }
 
-        .tree {
-            display: inline-block;
-            padding-top: 1.5rem;
-            position: relative;
-            list-style: none;
-            margin: 0;
+        #orgchart {
+            min-height: 600px;
         }
 
-        .tree ul {
-            padding-top: 24px; /* gap between parent node and children bar */
-            position: relative;
+        .orgchart {
+            background-color: transparent;
+        }
+
+        .orgchart .node {
+            width: 240px;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .orgchart .node .node-card {
+            background: #fff;
+            border-radius: 1.25rem;
+            border: 2px solid #e2e8f0;
+            padding: 0.8rem 1rem;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+        }
+
+        .orgchart .node .node-header {
             display: flex;
-            justify-content: center;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
         }
 
-        .tree li {
-            list-style: none;
-            text-align: center;
-            position: relative;
-            padding: 24px 24px 0 24px; /* gap between bar and node */
-        }
-
-        /* Horizontal connectors between siblings + short vertical down from bar */
-        .tree li::before,
-        .tree li::after {
-            content: "";
-            position: absolute;
-            top: 0;
-            border-top: 1px solid #e5e7eb;
-            width: 50%;
-            height: 20px;
-        }
-
-        .tree li::before {
-            right: 50%;
-            border-right: 1px solid #e5e7eb;
-        }
-
-        .tree li::after {
-            left: 50%;
-            border-left: 1px solid #e5e7eb;
-        }
-
-        /* Remove extra horizontal for outer siblings */
-        .tree li:first-child::before {
-            border-top: none;
-            border-right: none;
-        }
-
-        .tree li:last-child::after {
-            border-top: none;
-            border-left: none;
-        }
-
-        /* When only one child, no horizontal line */
-        .tree li:only-child::before,
-        .tree li:only-child::after {
-            border-top: none;
-            border-left: none;
-            border-right: none;
-        }
-
-        /* Vertical connector from parent node down to the horizontal bar */
-        .tree ul ul::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 50%;
-            border-left: 1px solid #e5e7eb;
-            width: 0;
-            height: 24px;
-            transform: translateX(-50%);
-        }
-
-        .dark .tree li::before,
-        .dark .tree li::after,
-        .dark .tree ul ul::before {
-            border-color: #4b5563;
-        }
-
-        /* --- Node cards --- */
-        .tree-node {
-            display: inline-flex;
-            flex-direction: column;
-            padding: 1rem;
-            background: white;
-            border: 2px solid #e5e7eb;
-            border-radius: 0.75rem;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08);
-            min-width: 220px;
-            margin: 0 1.5rem; /* visual spacing between cards without breaking line */
-            transition: all 0.2s ease;
-            cursor: default;
-            position: relative;
-        }
-
-        .tree-node > div {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            width: 100%;
-        }
-
-        .tree-node:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.1);
-        }
-
-        .tree-node.root {
-            border-color: #6366f1;
-            background: linear-gradient(to bottom, #eef2ff, #ffffff);
-        }
-
-        .tree-node.level-1 {
-            border-color: #38bdf8;
-        }
-
-        .tree-node.level-2 {
-            border-color: #22c55e;
-        }
-
-        .tree-node.level-3 {
-            border-color: #eab308;
-        }
-
-        .tree-node.level-4,
-        .tree-node.level-5 {
-            border-color: #a855f7;
-        }
-
-        .dark .tree-node {
-            background: #0f172a;
-            border-color: #1f2937;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
-        }
-
-        .dark .tree-node.root {
-            border-color: #6366f1;
-            background: linear-gradient(to bottom, #111827, #020617);
-        }
-
-        /* Expand / collapse button (similar to Network Overview) */
-        .expand-button {
-            position: absolute;
-            bottom: -12px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 24px;
-            height: 24px;
+        .orgchart .node .avatar {
+            width: 44px;
+            height: 44px;
             border-radius: 9999px;
-            background: white;
-            border: 2px solid #e5e7eb;
+            border: 2px solid #d1d5db;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
-            z-index: 10;
+            background-color: #f8fafc;
+            color: #475569;
         }
 
-        .dark .expand-button {
-            background: #0f172a;
+        .orgchart .node .name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 0.15rem;
+            text-align: left;
+        }
+
+        .orgchart .node .role {
+            font-size: 0.85rem;
+            color: #475569;
+            text-align: left;
+        }
+
+        .orgchart .node .meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.78rem;
+            color: #475569;
+            background: #f8fafc;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+        }
+
+        .orgchart .node .meta-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 9999px;
+            background: currentColor;
+        }
+
+        .orgchart .lines .topLine,
+        .orgchart .lines .rightLine,
+        .orgchart .lines .leftLine,
+        .orgchart .lines .downLine {
+            border-color: #e5e7eb !important;
+            background-color: #e5e7eb !important;
+        }
+
+        .dark .orgchart .lines .topLine,
+        .dark .orgchart .lines .rightLine,
+        .dark .orgchart .lines .leftLine,
+        .dark .orgchart .lines .downLine {
+            border-color: #475569 !important;
+            background-color: #475569 !important;
+        }
+
+        .orgchart .node .node-card.border-root {
+            border-color: #7367ff;
+        }
+
+        .orgchart .node .node-card.border-leader {
+            border-color: #38bdf8;
+        }
+
+        .orgchart .node .node-card.border-disciple {
+            border-color: #22c55e;
+        }
+
+        .orgchart .lines .topLine,
+        .orgchart .lines .rightLine,
+        .orgchart .lines .leftLine,
+        .orgchart .lines .downLine {
+            border-color: #e5e7eb;
+            background-color: #e5e7eb;
+        }
+
+        .dark .orgchart .node .node-card {
+            background-color: #0f172a;
             border-color: #1f2937;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
         }
 
-        .expand-button:hover {
-            background: #f3f4f6;
+        .dark .orgchart .node .name {
+            color: #f1f5f9;
         }
 
-        .dark .expand-button:hover {
-            background: #1f2937;
+        .dark .orgchart .node .role {
+            color: #cbd5f5;
         }
 
-        .expand-button.expanded {
-            background: #6366f1;
-            border-color: #6366f1;
-            color: white;
+        .dark .orgchart .node .meta {
+            color: #cbd5f5;
+            background: rgba(148, 163, 184, 0.15);
         }
+
+        .orgchart .hierarchy::before{
+            border-top: 2px solid rgba(148, 163, 184, 0.50) !important;
+        }
+
+        .orgchart>ul>li>ul li>.node::before, .orgchart .node:not(:only-child)::after {
+            background-color: rgba(148, 163, 184, 0.50);
+        }
+
+
     </style>
     @endpush
 
     @push('scripts')
+    <script
+        src="https://code.jquery.com/jquery-3.7.1.min.js"
+        crossorigin="anonymous"
+    ></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/jquery-mousewheel/3.1.13/jquery.mousewheel.min.js"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"
+    ></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/orgchart/3.8.0/js/jquery.orgchart.min.js"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"
+    ></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            document.addEventListener('click', function (e) {
-                const button = e.target.closest('.expand-button');
-                if (!button) return;
-
-                const li = button.closest('li');
-                if (!li) return;
-
-                const ul = li.querySelector('ul');
-                if (!ul) {
-                    // No children – hide button
-                    button.style.display = 'none';
+        (() => {
+            const centerViewport = () => {
+                const wrapper = document.getElementById('tree-container');
+                if (!wrapper) {
                     return;
                 }
 
-                const isExpanded = button.classList.contains('expanded');
+                requestAnimationFrame(() => {
+                    const adjustment = Math.max(0, (wrapper.scrollWidth - wrapper.clientWidth) / 2);
+                    wrapper.scrollLeft = adjustment;
+                });
+            };
 
-                if (isExpanded) {
-                    ul.style.display = 'none';
-                    button.classList.remove('expanded');
-                    button.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>';
-                } else {
-                    ul.style.display = 'flex';
-                    button.classList.add('expanded');
-                    button.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>';
+            const computeRole = (parentId, hasChildren) => {
+                if (parentId === null) {
+                    return 'Senior Leader';
                 }
-            });
-        });
+
+                return hasChildren ? 'Group Leader' : 'Disciple';
+            };
+
+            const formatDisciples = (count) => {
+                if (!count) {
+                    return 'No disciples yet';
+                }
+
+                return `${count} ${count === 1 ? 'disciple' : 'disciples'}`;
+            };
+
+            const roleClass = (role) => {
+                if (role === 'Senior Leader') {
+                    return 'root';
+                }
+
+                if (role === 'Group Leader') {
+                    return 'leader';
+                }
+
+                return 'disciple';
+            };
+
+            const levelLabel = (level) => {
+                if (level === 0) {
+                    return 'Leader';
+                }
+
+                const multiplier = Math.pow(12, level);
+                return `${multiplier.toLocaleString('en-US')} disciples`;
+            };
+
+            const normalizeNode = (node, parentId = null, level = 0) => {
+                if (!node || !node.id) {
+                    return null;
+                }
+
+                const children = Array.isArray(node.children)
+                    ? node.children
+                        .map((child) => normalizeNode(child, node.id, level + 1))
+                        .filter(Boolean)
+                    : [];
+
+                const role = computeRole(parentId, children.length > 0);
+
+                return {
+                    id: node.id,
+                    name: node.name ?? 'Unknown',
+                    children,
+                    role,
+                    discipleLabel: formatDisciples(Number(node.disciple_count ?? 0)),
+                    roleClass: roleClass(role),
+                    levelLabel: levelLabel(level),
+                };
+            };
+
+
+            const nodeTemplate = (data) => `
+                <div class="node-card border-${data.roleClass}">
+                    <div class="node-header">
+                        <div class="avatar">
+                            <svg class="w-6 h-6 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="name">${data.name}</div>
+                            <div class="role">${data.levelLabel}</div>
+                        </div>
+                    </div>
+                    <div class="meta">
+                        <span class="meta-dot"></span>
+                        ${data.discipleLabel}
+                    </div>
+                </div>
+            `;
+
+            const toggleEmptyState = (isEmpty) => {
+                const emptyState = document.getElementById('tree-empty-state');
+                if (!emptyState) {
+                    return;
+                }
+                emptyState.classList.toggle('hidden', !isEmpty);
+                emptyState.classList.toggle('block', isEmpty);
+            };
+
+            const renderChart = (data) => {
+                const $container = window.jQuery?.('#orgchart');
+
+                if (!$container || !$container.length) {
+                    return;
+                }
+
+                if (!data || !Object.keys(data).length) {
+                    $container.empty();
+                    toggleEmptyState(true);
+                    return;
+                }
+
+                const normalized = normalizeNode(data);
+
+                if (!normalized) {
+                    $container.empty();
+                    toggleEmptyState(true);
+                    return;
+                }
+
+                toggleEmptyState(false);
+
+                $container.empty();
+
+                $container.orgchart({
+                    data: normalized,
+                    pan: false,
+                    zoom: false,
+                    toggleSiblingsResp: true,
+                    nodeTemplate,
+                    createNode: ($node, data) => {
+                        $node.find('.node-card').addClass(`role-${data.roleClass}`);
+                    },
+                });
+
+                centerViewport();
+            };
+
+            const bootstrap = () => {
+                renderChart(@js($this->networkData));
+
+                window.addEventListener('family-tree-data', (event) => {
+                    renderChart(event.detail?.data ?? null);
+                });
+
+                window.addEventListener('tree-refreshed', centerViewport);
+            };
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+            } else {
+                bootstrap();
+            }
+        })();
     </script>
     @endpush
 </x-filament-panels::page>

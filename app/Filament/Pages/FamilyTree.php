@@ -37,6 +37,7 @@ class FamilyTree extends Page
 
         $user = Auth::user();
         $this->networkData = $this->buildTreeOptimized($user);
+        $this->dispatch('family-tree-data', data: $this->networkData);
     }
 
     public function refreshTree(): void
@@ -57,6 +58,7 @@ class FamilyTree extends Page
         $this->loadNetworkTree();
         $this->loadNetworkStats();
 
+        $this->dispatch('family-tree-data', data: $this->networkData);
         $this->dispatch('tree-refreshed');
     }
 
