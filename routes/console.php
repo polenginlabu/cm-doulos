@@ -28,7 +28,7 @@ Schedule::call(function () {
 
 // Schedule daily itinerary overview email + notification
 Schedule::job((new SendDailyItineraryOverview())->onQueue('mail'))
-    ->dailyAt('11:00')
+    ->dailyAt('11:10')
     ->timezone('Asia/Manila');
 
 // Schedule weekly itinerary reminder (Monday)
