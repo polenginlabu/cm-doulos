@@ -47,7 +47,7 @@ class WeeklyItinerary extends Page
     public function mount(): void
     {
         $this->weekStart = $this->getCurrentWeekStart()->format('Y-m-d');
-        $this->selectedDay = (int) Carbon::now()->dayOfWeek;
+        $this->selectedDay = (int) Carbon::now()->dayOfWeekIso - 1;
         $this->loadViewableUsers();
         $this->viewUserId = $this->resolveDefaultViewUserId();
         $this->refreshPlanner();
@@ -75,7 +75,7 @@ class WeeklyItinerary extends Page
     public function goToCurrentWeek(): void
     {
         $this->weekStart = $this->getCurrentWeekStart()->format('Y-m-d');
-        $this->selectedDay = (int) Carbon::now()->dayOfWeek;
+        $this->selectedDay = (int) Carbon::now()->dayOfWeekIso - 1;
         $this->refreshPlanner();
     }
 
