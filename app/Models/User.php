@@ -243,6 +243,22 @@ class User extends Authenticatable
     }
 
     /**
+     * Get weekly itinerary items for this user.
+     */
+    public function itineraryItems()
+    {
+        return $this->hasMany(ItineraryItem::class);
+    }
+
+    /**
+     * Get custom activities created by this user.
+     */
+    public function itineraryActivities()
+    {
+        return $this->hasMany(ItineraryActivity::class);
+    }
+
+    /**
      * Calculate and update the user's category based on engagement.
      *
      * Categories:
