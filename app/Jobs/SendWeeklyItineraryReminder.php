@@ -32,8 +32,7 @@ class SendWeeklyItineraryReminder implements ShouldQueue
             ->pluck('user_id');
 
         $users = User::query()
-            ->where('is_active', true)
-            ->whereNotIn('id', $usersWithPlans)
+            ->whereNotIn('id', values: $usersWithPlans)
             ->get();
 
         if ($users->isEmpty()) {
@@ -46,7 +45,6 @@ class SendWeeklyItineraryReminder implements ShouldQueue
                 Mail::to($user->email)->queue(new ItineraryWeeklyReminder(user: $user));
             }
 
-            $user->notify(new ItineraryWeeklyReminderNotification());
         }
     }
 }

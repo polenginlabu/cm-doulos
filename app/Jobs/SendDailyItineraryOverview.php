@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Mail\ItineraryDailyOverview;
 use App\Models\ItineraryItem;
-use App\Notifications\ItineraryDailyOverviewNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -34,6 +33,7 @@ class SendDailyItineraryOverview implements ShouldQueue
             ->get()
             ->groupBy('user_id');
 
+
         if ($itemsByUser->isEmpty()) {
             Log::info('SendDailyItineraryOverview: no items found for today');
             return;
@@ -42,7 +42,7 @@ class SendDailyItineraryOverview implements ShouldQueue
         foreach ($itemsByUser as $userId => $items) {
             $user = $items->first()?->user;
 
-            if (!$user || !$user->is_active) {
+            if (!$user) {
                 continue;
             }
 
@@ -60,11 +60,6 @@ class SendDailyItineraryOverview implements ShouldQueue
                     )
                 );
             }
-
-            $user->notify(new ItineraryDailyOverviewNotification(
-                date: $today,
-                activities: $activityNames
-            ));
         }
     }
 }
