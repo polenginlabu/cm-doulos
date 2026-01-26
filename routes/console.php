@@ -27,11 +27,11 @@ Schedule::call(function () {
 ->timezone('Asia/Manila');
 
 // Schedule daily itinerary overview email + notification
-Schedule::job(new SendDailyItineraryOverview())
+Schedule::job((new SendDailyItineraryOverview())->onQueue('mail'))
     ->dailyAt('11:00')
     ->timezone('Asia/Manila');
 
 // Schedule weekly itinerary reminder (Monday)
-Schedule::job(new SendWeeklyItineraryReminder())
+Schedule::job((new SendWeeklyItineraryReminder())->onQueue('mail'))
     ->weeklyOn(1, '07:15')
     ->timezone('Asia/Manila');
