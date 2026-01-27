@@ -22,7 +22,7 @@
                             User
                         </label>
                         <select
-                            wire:model="viewUserId"
+                            wire:model.live="viewUserId"
                             class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                         >
                             @foreach($viewableUsers as $userId => $userName)

@@ -53,8 +53,9 @@ class WeeklyItinerary extends Page
         $this->refreshPlanner();
     }
 
-    public function updatedViewUserId(): void
+    public function updatedViewUserId($value = null): void
     {
+        $this->viewUserId = $value !== null ? (int) $value : null;
         $this->viewUserId = $this->resolveDefaultViewUserId();
         $this->refreshPlanner();
     }
