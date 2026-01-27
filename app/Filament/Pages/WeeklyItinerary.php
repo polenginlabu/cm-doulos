@@ -317,7 +317,6 @@ class WeeklyItinerary extends Page
                 $query->whereNull('user_id')
                     ->orWhere('user_id', $this->viewUserId);
             })
-            ->orderBy('sort_order')
             ->orderBy('name')
             ->get();
 

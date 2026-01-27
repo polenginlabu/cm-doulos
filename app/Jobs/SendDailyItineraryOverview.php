@@ -52,7 +52,7 @@ class SendDailyItineraryOverview implements ShouldQueue
                 ->all();
 
             if ($user->email) {
-                Mail::to($user->email)->queue(
+                 Mail::to($user->email)->queue(
                     new ItineraryDailyOverview(
                         user: $user,
                         date: $today,

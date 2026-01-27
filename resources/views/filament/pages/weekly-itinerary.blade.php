@@ -3,11 +3,13 @@
     $weekEnd = $weekStart->copy()->addDays(6);
     $canEdit = $this->canEdit();
     $activityList = $activityGroups[0]['activities'] ?? [];
+    $totalActivities = collect($weekDays)->sum(fn ($day) => $day['items']->count());
+    $daysScheduled = collect($weekDays)->filter(fn ($day) => $day['items']->count() > 0)->count();
 @endphp
 
 <x-filament-panels::page>
     <div class="space-y-6">
-        <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between desktop-only">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Weekly Itinerary</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -64,6 +66,29 @@
             </div>
         </div>
 
+                <div class="mobile-only rounded-3xl bg-gradient-to-b from-indigo-50 via-violet-50 to-white px-5 py-6 shadow-sm dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
+            <div class="flex items-center justify-center">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 shadow">
+                    <x-heroicon-o-calendar-days class="h-4 w-4" />
+                    Weekly Planner
+                </span>
+            </div>
+            <div class="mt-4 text-center">
+                <h2 class="text-2xl font-bold text-gray-900">Church Itinerary</h2>
+                <p class="mt-1 text-sm text-gray-500">Tap to add activities to your week</p>
+            </div>
+            <div class="mt-5 grid grid-cols-2 gap-3">
+                <div class="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                    <div class="text-xl font-bold text-violet-600">{{ $totalActivities }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Activities</div>
+                </div>
+                <div class="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                    <div class="text-xl font-bold text-violet-600">{{ $daysScheduled }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Days Scheduled</div>
+                </div>
+            </div>
+        </div>
+
         @if(!$canEdit)
             <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                 Viewing only. Switch to your own profile to edit your weekly itinerary.
@@ -95,7 +120,7 @@
                     </div>
                 @endif
 
-                <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800" id="activity-library">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Activities</h3>
                         <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Drag to schedule</p>
@@ -112,7 +137,7 @@
                                 @endif
                             >
                                 <span>{{ $activity->name }}</span>
-                                <x-heroicon-o-arrows-up-down class="h-4 w-4 text-gray-400" />
+                                <span class="sr-only">Drag handle</span>
                             </button>
                         @empty
                             <div class="rounded-lg border border-dashed border-gray-200 px-2 py-6 text-center text-xs text-gray-400 dark:border-gray-700">
@@ -127,6 +152,12 @@
             <section class="min-w-0">
                 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     @foreach($weekDays as $day)
+                        @php
+                            $dayDate = $weekStart->copy()->addDays($day['index']);
+                            $dayShort = strtoupper($dayDate->format('D'));
+                            $dayNumber = $dayDate->format('j');
+                            $dayCount = $day['items']->count();
+                        @endphp
                         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
                             <div class="flex items-start justify-between">
                                 <button
@@ -134,12 +165,18 @@
                                     wire:click="selectDay({{ $day['index'] }})"
                                     class="flex w-full items-start justify-between text-left mb-2"
                                 >
-                                    <div>
-                                        <div class="text-sm font-semibold text-gray-900 dark:text-white">
-                                            {{ $day['label'] }}
-                                        </div>
-                                        <div class="text-xs text-gray-500 dark:text-gray-400">
-                                            {{ $day['date'] }}
+                                    <div class="flex items-center gap-3">
+                                        {{-- <div class="day-badge flex h-12 w-12 flex-col items-center justify-center rounded-2xl bg-transparent text-gray-900 shadow-none dark:text-white">
+                                            <span class="text-[10px] font-semibold tracking-wide">{{ $dayShort }}</span>
+                                            <span class="text-base font-bold leading-tight">{{ $dayNumber }}</span>
+                                        </div> --}}
+                                        <div>
+                                            <div class="text-sm font-semibold text-gray-900 dark:text-white">
+                                                <span class="text-base font-bold leading-tight">{{ $dayNumber }}</span>  {{ $day['label'] }}
+                                            </div>
+                                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                                {{ $dayCount }} {{ \Illuminate\Support\Str::plural('activity', $dayCount) }}
+                                            </div>
                                         </div>
                                     </div>
                                     <span class="mt-1 inline-flex h-2.5 w-2.5 rounded-full {{ $selectedDay === $day['index'] ? 'bg-primary-500' : 'bg-gray-200 dark:bg-gray-700' }}"></span>
@@ -179,6 +216,17 @@
                                     </div>
                                 @endforelse
                             </div>
+
+                            @if($canEdit)
+                            <button
+                                type="button"
+                                wire:click="selectDay({{ $day['index'] }})"
+                                x-on:click="$dispatch('open-modal', { id: 'activity-modal' })"
+                                class="mt-3 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                            >
+                                + Add Another Activity
+                            </button>
+                            @endif
                         </div>
                     @endforeach
                 </div>
@@ -186,8 +234,100 @@
         </div>
     </div>
 
+    @if($canEdit)
+        <x-filament::modal id="activity-modal" width="md">
+            <div class="w-full" x-data="{ mobileTab: 'preset' }">
+                <div class="border-b border-gray-100 pb-4 dark:border-gray-800">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="mb-5">
+                            <div class="text-base font-semibold text-gray-900 dark:text-white">
+                                Add Activity to {{ $weekDays[$selectedDay]['label'] ?? 'Day' }}
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Select an activity from the library</div>
+                        </div>
+                        <button
+                            type="button"
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                            aria-label="Close"
+                            x-on:click="$dispatch('close-modal', { id: 'activity-modal' })"
+                        >
+                            <x-heroicon-o-x-mark class="h-5 w-5" />
+                        </button>
+                    </div>
+
+                    <div class="mt-4 flex items-center gap-2 rounded-2xl bg-gray-100 p-1 text-xs font-semibold dark:bg-gray-800">
+                        <button
+                            type="button"
+                            class="flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-center transition"
+                            :class="mobileTab === 'preset' ? 'bg-violet-600 text-white shadow' : 'bg-white text-gray-600 hover:text-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100'"
+                            @click="mobileTab = 'preset'"
+                        >
+                            Preset Activities
+                        </button>
+                        <button
+                            type="button"
+                            class="flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-center transition"
+                            :class="mobileTab === 'custom' ? 'bg-violet-600 text-white shadow' : 'bg-white text-gray-600 hover:text-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100'"
+                            @click="mobileTab = 'custom'"
+                        >
+                            Custom Activity
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-4 max-h-[70vh] overflow-y-auto mb-2">
+                    <div x-show="mobileTab === 'preset'" x-cloak>
+                        <div class="mt-3 space-y-2">
+                            @forelse($activityList as $activity)
+                                <button
+                                    type="button"
+                                    data-activity-id="{{ $activity->id }}"
+                                    class="activity-card flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-900 shadow-sm transition hover:border-primary-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                    wire:click="addActivityToSelectedDay({{ $activity->id }})"
+                                    x-on:click="$dispatch('close-modal', { id: 'activity-modal' })"
+                                >
+                                    <span>{{ $activity->name }}</span>
+                                    <x-heroicon-o-plus class="h-4 w-4 text-gray-400" />
+                                </button>
+                            @empty
+                                <div class="rounded-lg border border-dashed border-gray-200 px-2 py-6 text-center text-xs text-gray-400">
+                                    No activities available yet.
+                                </div>
+                            @endforelse
+                        </div>
+                    </div>
+
+                    <div x-show="mobileTab === 'custom'" x-cloak>
+                        <form wire:submit.prevent="addFreeTextToSelectedDay" class="mt-3 space-y-2">
+                            <input
+                                type="text"
+                                wire:model.defer="freeTextActivity"
+                                placeholder="Type activity name"
+                                class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                            />
+                            @error('freeTextActivity')
+                                <p class="text-xs text-red-500">{{ $message }}</p>
+                            @enderror
+                            <button
+                                type="submit"
+                                class="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                                x-on:click="$dispatch('close-modal', { id: 'activity-modal' })"
+                            >
+                                Add Activity
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </x-filament::modal>
+    @endif
+
     @push('styles')
         <style>
+            [x-cloak] {
+                display: none !important;
+            }
+
             .drag-ghost {
                 opacity: 0.5;
             }
@@ -216,7 +356,19 @@
                 align-self: start;
             }
 
+            .mobile-only {
+                display: none;
+            }
+
             @media (max-width: 768px) {
+                .desktop-only {
+                    display: none;
+                }
+
+                .mobile-only {
+                    display: block;
+                }
+
                 .itinerary-layout {
                     grid-template-columns: 1fr;
                 }
@@ -227,6 +379,17 @@
 
                 .activity-scroll {
                     max-height: 50vh;
+                }
+
+                .day-items {
+                    border-style: solid;
+                    background: #ffffff;
+                }
+
+                .itinerary-item {
+                    background: #dcfce7;
+                    border-color: #86efac;
+                    color: #14532d;
                 }
             }
         </style>
@@ -239,6 +402,7 @@
                 const canEdit = @js($canEdit);
                 const componentId = @js($this->getId());
                 const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
 
                 const getComponent = () => window.Livewire?.find(componentId);
 
@@ -256,7 +420,7 @@
                 };
 
                 const initSortable = () => {
-                    if (!canEdit) {
+                    if (!canEdit || isMobileView) {
                         return;
                     }
 
