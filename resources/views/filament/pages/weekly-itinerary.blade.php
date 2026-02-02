@@ -66,7 +66,7 @@
             </div>
         </div>
 
-                <div class="mobile-only rounded-3xl bg-gradient-to-b from-indigo-50 via-violet-50 to-white px-5 py-6 shadow-sm dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
+        <div class="mobile-only rounded-3xl bg-gradient-to-b from-indigo-50 via-violet-50 to-white px-5 py-6 shadow-sm dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
             <div class="flex items-center justify-center">
                 <span class="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 shadow">
                     <x-heroicon-o-calendar-days class="h-4 w-4" />
