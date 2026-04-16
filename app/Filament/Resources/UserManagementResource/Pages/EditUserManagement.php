@@ -7,6 +7,7 @@ use App\Models\Discipleship;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class EditUserManagement extends EditRecord
 {
@@ -27,22 +28,17 @@ class EditUserManagement extends EditRecord
         $oldPrimaryUserId = $this->record->primary_user_id;
 
         // Auto-link cell leader and primary user
-        // If cell leader is a primary leader, set as primary user
         if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
             $cellLeader = \App\Models\User::find($data['cell_leader_id']);
             if ($cellLeader) {
-                // If cell leader is a primary leader, set as primary user
                 if ($cellLeader->is_primary_leader) {
                     $data['primary_user_id'] = $data['cell_leader_id'];
-                }
-                // Otherwise, inherit primary_user_id from cell leader
-                elseif ($cellLeader->primary_user_id) {
+                } elseif ($cellLeader->primary_user_id) {
                     $data['primary_user_id'] = $cellLeader->primary_user_id;
                 }
             }
-        }
-        // If primary user is set, set as cell leader
-        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
+        } elseif (isset($data['primary_user_id']) && $data['primary_user_id'] && empty($data['cell_leader_id'])) {
+            // Only use primary_user_id as cell leader if no cell leader was explicitly set
             $data['cell_leader_id'] = $data['primary_user_id'];
         }
 
@@ -70,105 +66,74 @@ class EditUserManagement extends EditRecord
             $this->cascadePrimaryUserToDisciples($user->id, $this->newPrimaryUserId);
         }
 
-        // Helper function to create or update discipleship relationship
-        $createOrUpdateDiscipleship = function ($mentorId, $fieldName = 'mentor') use ($user) {
-            if (!$mentorId) {
-                return true;
-            }
+        // A disciple can ONLY have ONE active mentor at a time
+        // cell_leader_id is the authoritative mentor; fall back to primary_user_id
+        $mentorId = $data['cell_leader_id'] ?? $data['primary_user_id'] ?? null;
 
-            // Prevent self-mentorship
-            if ($mentorId === $user->id) {
+        if ($mentorId) {
+            // Prevent self-mentorship (cast to int for reliable comparison)
+            if ((int) $mentorId === (int) $user->id) {
                 \Filament\Notifications\Notification::make()
                     ->title('Invalid Selection')
                     ->body('A user cannot be their own cell leader.')
                     ->danger()
                     ->send();
-                return false;
+                return;
             }
 
-            // Deactivate any existing active discipleship for this disciple (one-to-one constraint)
-            $deactivated = Discipleship::where('disciple_id', $user->id)
-                ->where('status', 'active')
-                ->where('mentor_id', '!=', $mentorId)
-                ->update(['status' => 'inactive']);
-
-            // Check if discipleship already exists with this mentor
-            $existingDiscipleship = Discipleship::where('mentor_id', $mentorId)
-                ->where('disciple_id', $user->id)
-                ->first();
-
             try {
-                if (!$existingDiscipleship) {
-                    // Create new discipleship relationship
-                    Discipleship::create([
-                        'mentor_id' => $mentorId,
-                        'disciple_id' => $user->id,
-                        'started_at' => now(),
-                        'status' => 'active',
-                    ]);
-                } else {
-                    // Reactivate existing relationship
-                    $existingDiscipleship->update([
-                        'status' => 'active',
-                        'started_at' => now(),
-                    ]);
-                }
-                return true;
+                DB::transaction(function () use ($user, $mentorId) {
+                    // Deactivate ALL existing active discipleships for this disciple
+                    Discipleship::where('disciple_id', $user->id)
+                        ->where('status', 'active')
+                        ->update(['status' => 'inactive']);
+
+                    // Check if discipleship already exists with this mentor
+                    $existingDiscipleship = Discipleship::where('mentor_id', $mentorId)
+                        ->where('disciple_id', $user->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($existingDiscipleship) {
+                        $existingDiscipleship->update([
+                            'status' => 'active',
+                            'started_at' => $existingDiscipleship->started_at ?? now(),
+                        ]);
+                    } else {
+                        Discipleship::create([
+                            'mentor_id' => $mentorId,
+                            'disciple_id' => $user->id,
+                            'started_at' => now(),
+                            'status' => 'active',
+                        ]);
+                    }
+                });
             } catch (\Exception $e) {
                 \Filament\Notifications\Notification::make()
                     ->title('Error')
-                    ->body('Failed to create cell leader relationship: ' . $e->getMessage())
+                    ->body('Failed to update cell leader relationship: ' . $e->getMessage())
                     ->danger()
                     ->send();
-                return false;
-            }
-        };
-
-        $success = true;
-
-        // Auto-link cell leader and primary user
-        // If cell leader is a primary leader, set as primary user
-        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
-            $cellLeader = \App\Models\User::find($data['cell_leader_id']);
-            if ($cellLeader && $cellLeader->is_primary_leader) {
-                $user->primary_user_id = $data['cell_leader_id'];
-                $user->save();
-            }
-        }
-        // If primary user is set, set as cell leader
-        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
-            $data['cell_leader_id'] = $data['primary_user_id'];
-        }
-
-        // If cell_leader_id is set, create discipleship relationship (cell leader as mentor)
-        if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
-            if (!$createOrUpdateDiscipleship($data['cell_leader_id'], 'cell leader')) {
-                $success = false;
+                return;
             }
         }
 
-        // If primary_user_id is set, create discipleship relationship (primary user as mentor)
-        if (isset($data['primary_user_id']) && $data['primary_user_id']) {
-            if (!$createOrUpdateDiscipleship($data['primary_user_id'], 'primary user')) {
-                $success = false;
-            }
-        }
-
-        if ($success) {
-            \Filament\Notifications\Notification::make()
-                ->title('Success')
-                ->body('User updated successfully.')
-                ->success()
-                ->send();
-        }
+        \Filament\Notifications\Notification::make()
+            ->title('Success')
+            ->body('User updated successfully.')
+            ->success()
+            ->send();
     }
 
     /**
-     * Cascade primary_user_id change to all disciples recursively
+     * Cascade primary_user_id change to all disciples recursively.
      */
-    protected function cascadePrimaryUserToDisciples(int $mentorId, ?int $primaryUserId): void
+    protected function cascadePrimaryUserToDisciples(int $mentorId, ?int $primaryUserId, int $depth = 0): void
     {
-        // Get all active disciples of this mentor
+        if ($depth >= 50) {
+            return;
+        }
+
         $discipleships = \App\Models\Discipleship::where('mentor_id', $mentorId)
             ->where('status', 'active')
             ->with('disciple')
@@ -180,8 +145,7 @@ class EditUserManagement extends EditRecord
                 $disciple->primary_user_id = $primaryUserId;
                 $disciple->saveQuietly();
 
-                // Recursively update their disciples
-                $this->cascadePrimaryUserToDisciples($disciple->id, $primaryUserId);
+                $this->cascadePrimaryUserToDisciples($disciple->id, $primaryUserId, $depth + 1);
             }
         }
     }

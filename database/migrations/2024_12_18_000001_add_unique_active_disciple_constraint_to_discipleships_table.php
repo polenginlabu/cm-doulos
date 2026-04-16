@@ -12,6 +12,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            Schema::table('discipleships', function (Blueprint $table) {
+                $table->unsignedBigInteger('active_disciple_id')->nullable()->after('disciple_id');
+            });
+            return;
+        }
+
         // First, clean up any existing duplicates
         // Keep only the most recent active discipleship for each disciple
         $duplicates = DB::table('discipleships')
@@ -94,6 +101,13 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            Schema::table('discipleships', function (Blueprint $table) {
+                $table->dropColumn('active_disciple_id');
+            });
+            return;
+        }
+
         Schema::table('discipleships', function (Blueprint $table) {
             $table->dropUnique('discipleships_active_disciple_id_unique');
             $table->dropColumn('active_disciple_id');
@@ -103,4 +117,3 @@ return new class extends Migration
         DB::statement('DROP TRIGGER IF EXISTS update_active_disciple_id_on_update');
     }
 };
-

@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -16,7 +17,12 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('cell_group_id')->nullable()->constrained('cell_groups')->onDelete('set null');
             $table->date('attendance_date');
-            $table->enum('attendance_type', ['cell_group', 'service', 'event'])->default('cell_group');
+            $driver = Schema::getConnection()->getDriverName();
+            if ($driver === 'sqlite') {
+                $table->string('attendance_type')->default('cell_group');
+            } else {
+                $table->enum('attendance_type', ['cell_group', 'service', 'event'])->default('cell_group');
+            }
             $table->boolean('is_present')->default(true);
             $table->text('notes')->nullable();
             $table->timestamps();
@@ -34,4 +40,3 @@ return new class extends Migration
         Schema::dropIfExists('attendances');
     }
 };
-

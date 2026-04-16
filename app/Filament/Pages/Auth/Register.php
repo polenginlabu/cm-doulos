@@ -5,11 +5,15 @@ namespace App\Filament\Pages\Auth;
 use App\Models\User;
 use App\Models\Discipleship;
 use App\Filament\Forms\Components\UserSelect;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Component;
 use Filament\Pages\Auth\Register as BaseRegister;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class Register extends BaseRegister
 {
@@ -19,6 +23,7 @@ class Register extends BaseRegister
             'form' => $this->form(
                 $this->makeForm()
                     ->schema([
+                        $this->getDataSourceInfoComponent(),
                         $this->getFirstNameFormComponent(),
                         $this->getLastNameFormComponent(),
                         $this->getEmailFormComponent(),
@@ -32,6 +37,34 @@ class Register extends BaseRegister
                     ->statePath('data'),
             ),
         ];
+    }
+
+    protected function getDataSourceInfoComponent(): Component
+    {
+        return Placeholder::make('data_source_info')
+            ->label('Data source')
+            ->content(function (): string {
+                $driver = DB::getDriverName();
+                $database = (string) DB::connection()->getDatabaseName();
+
+                if ($driver === 'sqlite') {
+                    $basePath = rtrim(base_path(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+                    $database = str_starts_with($database, $basePath)
+                        ? substr($database, strlen($basePath))
+                        : $database;
+                }
+
+                $usersCount = 0;
+                $networkLeadersCount = 0;
+
+                if (Schema::hasTable('users')) {
+                    $usersCount = User::count();
+                    $networkLeadersCount = User::where('is_primary_leader', true)->count();
+                }
+
+                return "DB: {$driver} ({$database}); users: {$usersCount}; network leaders: {$networkLeadersCount}";
+            })
+            ->helperText('Use this to confirm the app is reading the expected database.');
     }
 
     protected function getFirstNameFormComponent(): Component
@@ -100,7 +133,7 @@ class Register extends BaseRegister
     {
         return UserSelect::make('primary_user_id', [
                 'label' => 'Network Leader',
-                'primaryLeaderOnly' => false,
+                'primaryLeaderOnly' => true,
                 'gender' => null, // No gender filter
                 'excludeCurrentUser' => false,
                 'activeOnly' => false, // Show all users (active and inactive)
@@ -125,30 +158,65 @@ class Register extends BaseRegister
 
     protected function handleRegistration(array $data): \Illuminate\Database\Eloquent\Model
     {
-        $user = parent::handleRegistration($data);
+        $primaryLeaderId = $data['primary_user_id'] ?? null;
+        $mentorId = $data['mentor_id'] ?? null;
 
-        // If mentor is set, create discipleship relationship
-        if ($data['mentor_id'] ?? null) {
-            Discipleship::create([
-                'mentor_id' => $data['mentor_id'],
-                'disciple_id' => $user->id,
-                'started_at' => now(),
-                'status' => 'active',
-            ]);
+        if ($primaryLeaderId) {
+            $primaryLeader = User::find($primaryLeaderId);
+
+            if (!$primaryLeader) {
+                throw ValidationException::withMessages([
+                    'primary_user_id' => 'Selected network leader does not exist.',
+                ]);
+            }
+
+            if (!$primaryLeader->is_primary_leader) {
+                throw ValidationException::withMessages([
+                    'primary_user_id' => 'Selected network leader must be marked as a primary leader.',
+                ]);
+            }
         }
 
-        // If network leader is set, create discipleship relationship (network leader as mentor)
-        // Note: This will fail if mentor_id is also set, due to one-to-one constraint
-        if ($data['primary_user_id'] ?? null && !($data['mentor_id'] ?? null)) {
-            Discipleship::create([
-                'mentor_id' => $data['primary_user_id'],
-                'disciple_id' => $user->id,
-                'started_at' => now(),
-                'status' => 'active',
-            ]);
+        if ($mentorId) {
+            $mentor = User::find($mentorId);
+
+            if (!$mentor) {
+                throw ValidationException::withMessages([
+                    'mentor_id' => 'Selected mentor does not exist.',
+                ]);
+            }
+
+            if ($primaryLeaderId && $mentor->id !== (int) $primaryLeaderId && $mentor->primary_user_id !== (int) $primaryLeaderId) {
+                throw ValidationException::withMessages([
+                    'mentor_id' => 'Selected mentor is not under the selected network leader.',
+                ]);
+            }
         }
+
+        if (!$mentorId && $primaryLeaderId) {
+            $mentorId = $primaryLeaderId;
+        }
+
+        $user = DB::transaction(function () use ($data, $mentorId) {
+            $user = parent::handleRegistration($data);
+
+            if ($mentorId) {
+                Discipleship::updateOrCreate(
+                    [
+                        'mentor_id' => $mentorId,
+                        'disciple_id' => $user->id,
+                    ],
+                    [
+                        'started_at' => now(),
+                        'ended_at' => null,
+                        'status' => 'active',
+                    ]
+                );
+            }
+
+            return $user;
+        });
 
         return $user;
     }
 }
-

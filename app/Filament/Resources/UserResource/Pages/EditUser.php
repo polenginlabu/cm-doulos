@@ -60,7 +60,7 @@ class EditUser extends EditRecord
         // Always set primary_user_id to authenticated user's network
         if (Auth::check()) {
             $authUser = Auth::user();
-            
+
             // If auth user is a primary leader, use their ID
             if ($authUser->is_primary_leader) {
                 $data['primary_user_id'] = $authUser->id;
@@ -69,7 +69,7 @@ class EditUser extends EditRecord
             elseif ($authUser->primary_user_id) {
                 $data['primary_user_id'] = $authUser->primary_user_id;
             }
-            
+
             // Always set gender to authenticated user's gender
             if ($authUser->gender) {
                 $data['gender'] = $authUser->gender;
@@ -137,8 +137,8 @@ class EditUser extends EditRecord
 
                 // Step 2: If cell_leader_id is set, create/activate ONE discipleship
                 if ($cellLeaderId) {
-                    // Prevent self-mentorship
-                    if ($cellLeaderId === $user->id) {
+                    // Prevent self-mentorship (cast to int for reliable comparison)
+                    if ((int) $cellLeaderId === (int) $user->id) {
                         throw new \Exception('A user cannot be their own cell leader.');
                     }
 
@@ -189,9 +189,12 @@ class EditUser extends EditRecord
     /**
      * Cascade primary_user_id change to all disciples recursively
      */
-    protected function cascadePrimaryUserToDisciples(int $mentorId, ?int $primaryUserId): void
+    protected function cascadePrimaryUserToDisciples(int $mentorId, ?int $primaryUserId, int $depth = 0): void
     {
-        // Get all active disciples of this mentor
+        if ($depth >= 50) {
+            return;
+        }
+
         $discipleships = \App\Models\Discipleship::where('mentor_id', $mentorId)
             ->where('status', 'active')
             ->with('disciple')
@@ -203,8 +206,7 @@ class EditUser extends EditRecord
                 $disciple->primary_user_id = $primaryUserId;
                 $disciple->saveQuietly();
 
-                // Recursively update their disciples
-                $this->cascadePrimaryUserToDisciples($disciple->id, $primaryUserId);
+                $this->cascadePrimaryUserToDisciples($disciple->id, $primaryUserId, $depth + 1);
             }
         }
     }

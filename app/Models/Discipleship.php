@@ -32,8 +32,8 @@ class Discipleship extends Model
         parent::boot();
 
         static::creating(function ($discipleship) {
-            // Prevent self-mentorship
-            if ($discipleship->mentor_id === $discipleship->disciple_id) {
+            // Prevent self-mentorship (cast to int to handle string/int from forms)
+            if ((int) $discipleship->mentor_id === (int) $discipleship->disciple_id) {
                 return false; // Prevent creation
             }
 
@@ -72,8 +72,8 @@ class Discipleship extends Model
         });
 
         static::updating(function ($discipleship) {
-            // Prevent self-mentorship
-            if ($discipleship->mentor_id === $discipleship->disciple_id) {
+            // Prevent self-mentorship (cast to int to handle string/int from forms)
+            if ((int) $discipleship->mentor_id === (int) $discipleship->disciple_id) {
                 return false; // Prevent update
             }
 
@@ -105,28 +105,49 @@ class Discipleship extends Model
     }
 
     /**
-     * Clear family tree cache for affected users
+     * Clear family tree cache for affected users.
+     *
+     * Walks UP the mentor chain from both the mentor and disciple to clear
+     * caches of all ancestors who include these users in their tree view.
      */
     protected static function clearFamilyTreeCache($mentorId, $discipleId): void
     {
-        // Clear cache for the mentor
+        $idsToInvalidate = collect();
+
+        // Collect the mentor + all ancestors up the chain
         if ($mentorId) {
-            Cache::forget("family_tree_{$mentorId}");
-            Cache::forget("family_tree_stats_{$mentorId}");
+            $idsToInvalidate->push($mentorId);
+            static::collectAncestorIds($mentorId, $idsToInvalidate);
         }
 
-        // Clear cache for the disciple
+        // Collect the disciple + all ancestors up the chain
         if ($discipleId) {
-            Cache::forget("family_tree_{$discipleId}");
-            Cache::forget("family_tree_stats_{$discipleId}");
+            $idsToInvalidate->push($discipleId);
+            static::collectAncestorIds($discipleId, $idsToInvalidate);
         }
 
-        // Clear cache for all users in the network (get all users who might be affected)
-        // This is a simple approach - in production you might want to be more selective
-        $allUserIds = \App\Models\User::pluck('id');
-        foreach ($allUserIds as $userId) {
+        foreach ($idsToInvalidate->unique() as $userId) {
             Cache::forget("family_tree_{$userId}");
             Cache::forget("family_tree_stats_{$userId}");
+        }
+    }
+
+    /**
+     * Walk up the mentor chain and collect ancestor IDs.
+     */
+    protected static function collectAncestorIds(int $userId, \Illuminate\Support\Collection $ids, int $depth = 0): void
+    {
+        if ($depth >= 50) {
+            return;
+        }
+
+        $mentorId = static::where('disciple_id', $userId)
+            ->where('status', 'active')
+            ->value('mentor_id');
+
+        if ($mentorId && !$ids->contains($mentorId)) {
+            $ids->push($mentorId);
+            static::collectAncestorIds($mentorId, $ids, $depth + 1);
         }
     }
 }

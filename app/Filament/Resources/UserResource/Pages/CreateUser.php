@@ -63,7 +63,7 @@ class CreateUser extends CreateRecord
         // Always set primary_user_id to authenticated user's network
         if (Auth::check()) {
             $authUser = Auth::user();
-            
+
             // If auth user is a primary leader, use their ID
             if ($authUser->is_primary_leader) {
                 $data['primary_user_id'] = $authUser->id;
@@ -72,13 +72,13 @@ class CreateUser extends CreateRecord
             elseif ($authUser->primary_user_id) {
                 $data['primary_user_id'] = $authUser->primary_user_id;
             }
-            
+
             // Always set gender to authenticated user's gender
             if ($authUser->gender) {
                 $data['gender'] = $authUser->gender;
             }
         }
-        
+
         // Auto-link cell leader and primary user
         // If cell leader is a primary leader, set as primary user
         if (isset($data['cell_leader_id']) && $data['cell_leader_id']) {
@@ -121,8 +121,8 @@ class CreateUser extends CreateRecord
 
         // If we have a mentor, create the discipleship
         if ($mentorId) {
-            // Prevent self-mentorship
-            if ($mentorId === $user->id) {
+            // Prevent self-mentorship (cast to int for reliable comparison)
+            if ((int) $mentorId === (int) $user->id) {
                 \Filament\Notifications\Notification::make()
                     ->title('Invalid Selection')
                     ->body('A user cannot be their own cell leader.')

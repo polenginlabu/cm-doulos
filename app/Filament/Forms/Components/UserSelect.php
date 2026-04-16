@@ -121,14 +121,15 @@ class UserSelect extends Select
                 // Apply network filtering (filter by authenticated user's network)
                 if (Auth::check()) {
                     $authUser = Auth::user();
+                    if (!$authUser instanceof User) {
+                        return [];
+                    }
+
                     // Super admins and network admins can see all users
                     if (!$authUser->is_super_admin && !$authUser->is_network_admin) {
-                        if (method_exists($authUser, 'getNetworkUserIds')) {
-                            /** @phpstan-ignore-next-line */
-                            $networkIds = $authUser->getNetworkUserIds(); // @phpstan-ignore-line
-                            if (!empty($networkIds)) {
-                                $query->whereIn('id', $networkIds);
-                            }
+                        $networkIds = $authUser->getNetworkUserIds();
+                        if (!empty($networkIds)) {
+                            $query->whereIn('id', $networkIds);
                         }
                     }
                 }
@@ -187,6 +188,7 @@ class UserSelect extends Select
                 $gender,
                 $primaryLeaderOnly,
                 $excludePrimaryLeader,
+                $networkLeaderId,
                 $activeOnly,
                 $excludeCurrentUser,
                 $excludeRecord,
@@ -206,17 +208,30 @@ class UserSelect extends Select
                     $query->where('is_primary_leader', false);
                 }
 
+                // Apply network leader filter
+                $networkLeaderValue = $networkLeaderId;
+                if (is_callable($networkLeaderId)) {
+                    $networkLeaderValue = $networkLeaderId($get);
+                } elseif ($networkLeaderId === null && $get) {
+                    $networkLeaderValue = $get('primary_user_id');
+                }
+
+                if ($networkLeaderValue) {
+                    $query->where('primary_user_id', $networkLeaderValue);
+                }
+
                 // Apply network filtering (filter by authenticated user's network)
                 if (Auth::check()) {
                     $authUser = Auth::user();
+                    if (!$authUser instanceof User) {
+                        return [];
+                    }
+
                     // Super admins and network admins can see all users
                     if (!$authUser->is_super_admin && !$authUser->is_network_admin) {
-                        if (method_exists($authUser, 'getNetworkUserIds')) {
-                            /** @phpstan-ignore-next-line */
-                            $networkIds = $authUser->getNetworkUserIds(); // @phpstan-ignore-line
-                            if (!empty($networkIds)) {
-                                $query->whereIn('id', $networkIds);
-                            }
+                        $networkIds = $authUser->getNetworkUserIds();
+                        if (!empty($networkIds)) {
+                            $query->whereIn('id', $networkIds);
                         }
                     }
                 }
@@ -297,6 +312,14 @@ class UserSelect extends Select
 
                 if ($excludePrimaryLeader) {
                     $query->where('is_primary_leader', false);
+                }
+
+                // Apply network leader filter from form state when available
+                if ($get) {
+                    $networkLeaderValue = $get('primary_user_id');
+                    if ($networkLeaderValue) {
+                        $query->where('primary_user_id', $networkLeaderValue);
+                    }
                 }
 
                 // Apply gender filter
